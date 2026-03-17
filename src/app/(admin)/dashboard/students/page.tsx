@@ -3,6 +3,24 @@
 import { useEffect, useState, useCallback } from 'react'
 import type { Student } from '@/types/database'
 
+const SERIES_COLS = ['공채', '구급', '학과', '구조', '기타']
+
+function parseExcelPaste(text: string): { name: string; phone: string; exam_number: string; gender: string; region: string; series: string }[] {
+  return text.trim().split('\n').flatMap(line => {
+    const cols = line.split('\t').map(c => c.trim())
+    const name = cols[0] ?? ''
+    const phone = cols[1] ?? ''
+    if (!name || !phone) return []
+    const exam_number = cols[3] ?? ''
+    const gender = cols[4] ?? ''
+    const region = cols[5] ?? ''
+    // 직렬: col 6~10 중 'O'/'o' 있는 컬럼명
+    const seriesIdx = SERIES_COLS.findIndex((_, i) => /^o$/i.test(cols[6 + i] ?? ''))
+    const series = seriesIdx >= 0 ? SERIES_COLS[seriesIdx] : ''
+    return [{ name, phone, exam_number, gender, region, series }]
+  })
+}
+
 export default function StudentsPage() {
   const [students, setStudents] = useState<Student[]>([])
   const [total, setTotal] = useState(0)
@@ -12,6 +30,14 @@ export default function StudentsPage() {
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({ name:'', phone:'', exam_number:'', gender:'', region:'', series:'' })
   const [editId, setEditId] = useState<string | null>(null)
+
+  // 엑셀 붙여넣기
+  const [showBulk, setShowBulk] = useState(false)
+  const [pasteText, setPasteText] = useState('')
+  const [preview, setPreview] = useState<ReturnType<typeof parseExcelPaste>>([])
+  const [bulkLoading, setBulkLoading] = useState(false)
+  const [bulkMsg, setBulkMsg] = useState('')
+
   const PAGE_SIZE = 20
 
   const load = useCallback(async () => {
@@ -51,16 +77,44 @@ export default function StudentsPage() {
     setShowForm(true)
   }
 
+  function handlePasteChange(text: string) {
+    setPasteText(text)
+    setBulkMsg('')
+    setPreview(text.trim() ? parseExcelPaste(text) : [])
+  }
+
+  async function handleBulkImport() {
+    if (!preview.length) return
+    setBulkLoading(true)
+    setBulkMsg('')
+    const res = await fetch('/api/students/bulk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(preview),
+    })
+    const data = await res.json()
+    setBulkLoading(false)
+    if (!res.ok) { setBulkMsg(data.error ?? '등록 실패'); return }
+    setBulkMsg(`완료: ${data.inserted}명 등록 (전체 ${data.total}명 중 중복 제외)`)
+    load()
+  }
+
   const totalPages = Math.ceil(total / PAGE_SIZE)
 
   return (
     <div className="max-w-5xl">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-gray-900">학생 명단 <span className="text-base text-gray-400 font-normal">({total}명)</span></h1>
-        <button onClick={() => { setEditId(null); setForm({ name:'', phone:'', exam_number:'', gender:'', region:'', series:'' }); setShowForm(true) }}
-          className="px-4 py-2 rounded-lg text-sm text-white font-medium" style={{ background: 'var(--theme)' }}>
-          + 학생 추가
-        </button>
+        <div className="flex gap-2">
+          <button onClick={() => { setPasteText(''); setPreview([]); setBulkMsg(''); setShowBulk(true) }}
+            className="px-4 py-2 rounded-lg text-sm font-medium border border-gray-300 text-gray-700 bg-white">
+            엑셀 붙여넣기
+          </button>
+          <button onClick={() => { setEditId(null); setForm({ name:'', phone:'', exam_number:'', gender:'', region:'', series:'' }); setShowForm(true) }}
+            className="px-4 py-2 rounded-lg text-sm text-white font-medium" style={{ background: 'var(--theme)' }}>
+            + 학생 추가
+          </button>
+        </div>
       </div>
 
       <input value={search} onChange={e => { setSearch(e.target.value); setPage(1) }}
@@ -109,6 +163,68 @@ export default function StudentsPage() {
               className={`w-8 h-8 rounded-lg text-sm ${p === page ? 'text-white' : 'bg-white text-gray-600 border'}`}
               style={p === page ? { background: 'var(--theme)' } : {}}>{p}</button>
           ))}
+        </div>
+      )}
+
+      {/* 엑셀 붙여넣기 모달 */}
+      {showBulk && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowBulk(false)}>
+          <div className="bg-white rounded-2xl p-6 w-full max-w-3xl shadow-xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <h2 className="text-lg font-bold mb-1">엑셀 붙여넣기 대량 등록</h2>
+            <p className="text-xs text-gray-500 mb-3">
+              엑셀에서 데이터 행을 선택 후 복사(Ctrl+C)하여 아래에 붙여넣기(Ctrl+V)하세요.<br />
+              컬럼 순서: <strong>이름 / 연락처 / 구분 / 수험번호 / 성별 / 응시지역 / 공채 / 구급 / 학과 / 구조 / 기타</strong>
+            </p>
+            <textarea
+              className="w-full h-32 px-3 py-2 border border-gray-200 rounded-lg text-sm font-mono focus:outline-none focus:border-blue-900 resize-none"
+              placeholder="여기에 엑셀 데이터를 붙여넣으세요..."
+              value={pasteText}
+              onChange={e => handlePasteChange(e.target.value)}
+            />
+
+            {preview.length > 0 && (
+              <div className="mt-3 flex-1 overflow-auto">
+                <p className="text-xs text-gray-500 mb-1">미리보기 ({preview.length}명)</p>
+                <table className="w-full text-xs border border-gray-100 rounded-lg overflow-hidden">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      {['이름','연락처','수험번호','성별','지역','직렬'].map(h => (
+                        <th key={h} className="px-2 py-2 text-left text-gray-500 font-medium">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {preview.map((r, i) => (
+                      <tr key={i} className="border-t border-gray-50">
+                        <td className="px-2 py-1">{r.name}</td>
+                        <td className="px-2 py-1">{r.phone}</td>
+                        <td className="px-2 py-1">{r.exam_number || '-'}</td>
+                        <td className="px-2 py-1">{r.gender || '-'}</td>
+                        <td className="px-2 py-1">{r.region || '-'}</td>
+                        <td className="px-2 py-1">{r.series || '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {bulkMsg && (
+              <p className={`mt-2 text-sm ${bulkMsg.includes('실패') ? 'text-red-500' : 'text-green-600'}`}>{bulkMsg}</p>
+            )}
+
+            <div className="flex gap-3 mt-4">
+              <button onClick={() => setShowBulk(false)} className="flex-1 py-2 rounded-lg border text-sm text-gray-600">닫기</button>
+              <button
+                onClick={handleBulkImport}
+                disabled={bulkLoading || preview.length === 0}
+                className="flex-1 py-2 rounded-lg text-sm text-white font-medium disabled:opacity-50"
+                style={{ background: 'var(--theme)' }}
+              >
+                {bulkLoading ? '등록 중...' : `${preview.length}명 등록`}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

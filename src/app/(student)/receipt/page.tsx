@@ -56,8 +56,7 @@ export default function ReceiptPage() {
   }
 
   const { student, materials, receipts, token } = data
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
-  const qrUrl = `${appUrl}/scan?token=${encodeURIComponent(token)}`
+  const qrUrl = `${typeof window !== 'undefined' ? window.location.origin : ''}/scan?token=${encodeURIComponent(token)}`
 
   // 다음 수령 대상
   const nextMaterialId = materials.find(m => m.is_active && !receipts[m.id])?.id
