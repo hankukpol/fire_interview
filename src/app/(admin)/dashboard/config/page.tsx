@@ -10,8 +10,15 @@ interface Popup {
 }
 
 export default function ConfigPage() {
+  // ── App config state ─────────────────────────────────────
+  const [appName, setAppName] = useState('')
+  const [themeColor, setThemeColor] = useState('#1a237e')
+  const [appMsg, setAppMsg] = useState('')
+  const [appLoading, setAppLoading] = useState(false)
+
   // ── Popup state ─────────────────────────────────────────
   const [popups, setPopups] = useState<Popup[]>([])
+  const [popupFetchError, setPopupFetchError] = useState(false)
   const [popupLoading, setPopupLoading] = useState(false)
   const [popupMsg, setPopupMsg] = useState('')
 
@@ -28,10 +35,27 @@ export default function ConfigPage() {
   const [cacheLoading, setCacheLoading] = useState(false)
 
   useEffect(() => {
+    fetch('/api/config/app').then(r => r.json()).then((cfg: { app_name: string; theme_color: string }) => {
+      setAppName(cfg.app_name ?? '')
+      setThemeColor(cfg.theme_color ?? '#1a237e')
+    })
     fetch('/api/config/popups')
-      .then(r => r.json())
+      .then(r => { if (!r.ok) throw new Error(); return r.json() })
       .then(setPopups)
+      .catch(() => setPopupFetchError(true))
   }, [])
+
+  async function saveAppConfig() {
+    setAppLoading(true); setAppMsg('')
+    const res = await fetch('/api/config/app', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ app_name: appName, theme_color: themeColor }),
+    })
+    setAppLoading(false)
+    setAppMsg(res.ok ? '저장되었습니다.' : '저장 실패')
+    setTimeout(() => setAppMsg(''), 3000)
+  }
 
   // ── Popup save ───────────────────────────────────────────
   async function savePopup(popup: Popup) {
@@ -105,10 +129,51 @@ export default function ConfigPage() {
     <div className="max-w-3xl space-y-8">
       <h1 className="text-2xl font-bold text-gray-900">설정</h1>
 
+      {/* ── 앱 기본 설정 ─────────────────────────────────── */}
+      <section className="bg-white border border-gray-200 p-6 space-y-4">
+        <h2 className="text-lg font-semibold text-gray-800">앱 기본 설정</h2>
+        <div className="space-y-1">
+          <label className="text-sm font-medium text-gray-600">앱 이름 (헤더 제목)</label>
+          <input
+            type="text"
+            value={appName}
+            onChange={e => setAppName(e.target.value)}
+            className={inputCls}
+            placeholder="최준 면접 모바일 접수증"
+          />
+        </div>
+        <div className="space-y-1">
+          <label className="text-sm font-medium text-gray-600">테마 색상</label>
+          <div className="flex items-center gap-3">
+            <input
+              type="color"
+              value={themeColor}
+              onChange={e => setThemeColor(e.target.value)}
+              className="w-12 h-10 border border-gray-200 cursor-pointer p-1"
+            />
+            <input
+              type="text"
+              value={themeColor}
+              onChange={e => setThemeColor(e.target.value)}
+              className="w-32 px-3 py-2 border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="#1a237e"
+            />
+            <div className="w-10 h-10 border border-gray-200" style={{ background: themeColor }} />
+          </div>
+        </div>
+        <button onClick={saveAppConfig} disabled={appLoading} className={`${btnPrimary}`} style={{ background: 'var(--theme)' }}>
+          {appLoading ? '저장 중...' : '저장'}
+        </button>
+        {appMsg && <p className={`text-sm ${appMsg.includes('실패') ? 'text-red-500' : 'text-green-600'}`}>{appMsg}</p>}
+      </section>
+
       {/* ── 팝업 콘텐츠 ─────────────────────────────────── */}
       <section className="bg-white rounded-2xl shadow-sm p-6 space-y-6">
         <h2 className="text-lg font-semibold text-gray-800">팝업 콘텐츠</h2>
 
+        {popupFetchError && (
+          <p className="text-sm text-red-500">팝업 데이터를 불러오지 못했습니다. 페이지를 새로 고침해 주세요.</p>
+        )}
         {popups.map(popup => (
           <div key={popup.popup_key} className="space-y-3 pb-6 border-b border-gray-100 last:border-0 last:pb-0">
             <div className="flex items-center justify-between">
@@ -124,11 +189,9 @@ export default function ConfigPage() {
                   />
                   <div
                     className={`w-10 h-6 rounded-full transition-colors ${popup.is_active ? 'bg-blue-600' : 'bg-gray-200'}`}
-                    onClick={() => updatePopup(popup.popup_key, 'is_active', !popup.is_active)}
                   />
                   <div
                     className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${popup.is_active ? 'translate-x-5' : 'translate-x-1'}`}
-                    onClick={() => updatePopup(popup.popup_key, 'is_active', !popup.is_active)}
                   />
                 </div>
               </label>

@@ -14,8 +14,10 @@ export async function POST(req: NextRequest) {
   }
 
   const hash = await getPinHash('staff_pin_hash')
-  // PIN이 설정되지 않은 경우 무조건 통과
-  if (hash && !(await verifyPin(parsed.data.pin, hash))) {
+  if (!hash) {
+    return NextResponse.json({ error: '직원 PIN이 설정되지 않았습니다. 관리자에게 문의하세요.' }, { status: 503 })
+  }
+  if (!(await verifyPin(parsed.data.pin, hash))) {
     return NextResponse.json({ error: '직원 PIN이 올바르지 않습니다.' }, { status: 401 })
   }
 

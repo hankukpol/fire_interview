@@ -1,7 +1,17 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import type { Student } from '@/types/database'
+
+function getPageNumbers(current: number, total: number): (number | '...')[] {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1)
+  const pages: (number | '...')[] = [1]
+  if (current > 3) pages.push('...')
+  for (let i = Math.max(2, current - 1); i <= Math.min(total - 1, current + 1); i++) pages.push(i)
+  if (current < total - 2) pages.push('...')
+  pages.push(total)
+  return pages
+}
 
 const SERIES_COLS = ['공채', '구급', '학과', '구조', '기타']
 
@@ -27,6 +37,7 @@ export default function StudentsPage() {
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(false)
+  const [loadError, setLoadError] = useState(false)
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({ name:'', phone:'', exam_number:'', gender:'', region:'', series:'' })
   const [editId, setEditId] = useState<string | null>(null)
@@ -39,15 +50,23 @@ export default function StudentsPage() {
   const [bulkMsg, setBulkMsg] = useState('')
 
   const PAGE_SIZE = 20
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
-    const params = new URLSearchParams({ page: String(page), limit: String(PAGE_SIZE), search })
-    const res = await fetch(`/api/students?${params}`)
-    const data = await res.json()
-    setStudents(data.students ?? [])
-    setTotal(data.total ?? 0)
-    setLoading(false)
+    setLoadError(false)
+    try {
+      const params = new URLSearchParams({ page: String(page), limit: String(PAGE_SIZE), search })
+      const res = await fetch(`/api/students?${params}`)
+      if (!res.ok) throw new Error()
+      const data = await res.json()
+      setStudents(data.students ?? [])
+      setTotal(data.total ?? 0)
+    } catch {
+      setLoadError(true)
+    } finally {
+      setLoading(false)
+    }
   }, [page, search])
 
   useEffect(() => { load() }, [load])
@@ -117,9 +136,15 @@ export default function StudentsPage() {
         </div>
       </div>
 
-      <input value={search} onChange={e => { setSearch(e.target.value); setPage(1) }}
+      <input
+        defaultValue={search}
+        onChange={e => {
+          const val = e.target.value
+          if (debounceRef.current) clearTimeout(debounceRef.current)
+          debounceRef.current = setTimeout(() => { setSearch(val); setPage(1) }, 300)
+        }}
         placeholder="이름, 수험번호, 연락처 검색..."
-        className="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm mb-4 focus:outline-none focus:border-blue-900" />
+        className="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500" />
 
       {/* 테이블 */}
       <div className="bg-white rounded-2xl shadow-sm overflow-auto">
@@ -134,6 +159,8 @@ export default function StudentsPage() {
           <tbody>
             {loading ? (
               <tr><td colSpan={6} className="text-center py-8 text-gray-400">로딩 중...</td></tr>
+            ) : loadError ? (
+              <tr><td colSpan={6} className="text-center py-8 text-red-400">데이터를 불러오지 못했습니다. <button onClick={load} className="underline">다시 시도</button></td></tr>
             ) : students.length === 0 ? (
               <tr><td colSpan={6} className="text-center py-8 text-gray-400">학생이 없습니다.</td></tr>
             ) : students.map(s => (
@@ -157,12 +184,18 @@ export default function StudentsPage() {
 
       {/* 페이지네이션 */}
       {totalPages > 1 && (
-        <div className="flex justify-center gap-2 mt-4">
-          {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
-            <button key={p} onClick={() => setPage(p)}
-              className={`w-8 h-8 rounded-lg text-sm ${p === page ? 'text-white' : 'bg-white text-gray-600 border'}`}
-              style={p === page ? { background: 'var(--theme)' } : {}}>{p}</button>
-          ))}
+        <div className="flex justify-center items-center gap-1 mt-4 flex-wrap">
+          <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
+            className="w-8 h-8 rounded-lg text-sm bg-white text-gray-600 border disabled:opacity-30">‹</button>
+          {getPageNumbers(page, totalPages).map((p, i) =>
+            p === '...'
+              ? <span key={`e${i}`} className="w-8 h-8 flex items-center justify-center text-gray-400 text-sm">…</span>
+              : <button key={p} onClick={() => setPage(p)}
+                  className={`w-8 h-8 rounded-lg text-sm ${p === page ? 'text-white' : 'bg-white text-gray-600 border'}`}
+                  style={p === page ? { background: 'var(--theme)' } : {}}>{p}</button>
+          )}
+          <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
+            className="w-8 h-8 rounded-lg text-sm bg-white text-gray-600 border disabled:opacity-30">›</button>
         </div>
       )}
 

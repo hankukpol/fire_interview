@@ -2,6 +2,16 @@
 
 import { useEffect, useState, useCallback } from 'react'
 
+function getPageNumbers(current: number, total: number): (number | '...')[] {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1)
+  const pages: (number | '...')[] = [1]
+  if (current > 3) pages.push('...')
+  for (let i = Math.max(2, current - 1); i <= Math.min(total - 1, current + 1); i++) pages.push(i)
+  if (current < total - 2) pages.push('...')
+  pages.push(total)
+  return pages
+}
+
 interface Log {
   id: number
   distributed_at: string
@@ -16,17 +26,25 @@ export default function LogsPage() {
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(false)
+  const [loadError, setLoadError] = useState(false)
   const [deletingId, setDeletingId] = useState<number | null>(null)
   const PAGE_SIZE = 50
 
   const load = useCallback(async () => {
     setLoading(true)
-    const params = new URLSearchParams({ page: String(page), limit: String(PAGE_SIZE) })
-    const res = await fetch(`/api/distribution/logs?${params}`)
-    const data = await res.json()
-    setLogs(data.logs ?? [])
-    setTotal(data.total ?? 0)
-    setLoading(false)
+    setLoadError(false)
+    try {
+      const params = new URLSearchParams({ page: String(page), limit: String(PAGE_SIZE) })
+      const res = await fetch(`/api/distribution/logs?${params}`)
+      if (!res.ok) throw new Error()
+      const data = await res.json()
+      setLogs(data.logs ?? [])
+      setTotal(data.total ?? 0)
+    } catch {
+      setLoadError(true)
+    } finally {
+      setLoading(false)
+    }
   }, [page])
 
   useEffect(() => { load() }, [load])
@@ -43,9 +61,17 @@ export default function LogsPage() {
 
   return (
     <div className="max-w-5xl">
-      <h1 className="text-2xl font-bold mb-6 text-gray-900">
-        배부 로그 <span className="text-base text-gray-400 font-normal">({total}건)</span>
-      </h1>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-2xl font-bold text-gray-900">
+          배부 로그 <span className="text-base text-gray-400 font-normal">({total}건)</span>
+        </h1>
+        <a
+          href="/api/distribution/logs/export"
+          className="px-4 py-2 text-sm font-medium border border-gray-300 text-gray-700 bg-white hover:bg-gray-50"
+        >
+          CSV 내보내기
+        </a>
+      </div>
 
       <div className="bg-white rounded-2xl shadow-sm overflow-auto">
         <table className="w-full text-sm">
@@ -58,9 +84,11 @@ export default function LogsPage() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={6} className="text-center py-8 text-gray-400">로딩 중...</td></tr>
+              <tr><td colSpan={7} className="text-center py-8 text-gray-400">로딩 중...</td></tr>
+            ) : loadError ? (
+              <tr><td colSpan={7} className="text-center py-8 text-red-400">데이터를 불러오지 못했습니다. <button onClick={load} className="underline">다시 시도</button></td></tr>
             ) : logs.length === 0 ? (
-              <tr><td colSpan={6} className="text-center py-8 text-gray-400">배부 기록이 없습니다.</td></tr>
+              <tr><td colSpan={7} className="text-center py-8 text-gray-400">배부 기록이 없습니다.</td></tr>
             ) : logs.map(l => (
               <tr key={l.id} className="border-b border-gray-50 hover:bg-gray-50">
                 <td className="px-4 py-3 text-gray-500 whitespace-nowrap">
@@ -91,12 +119,18 @@ export default function LogsPage() {
       </div>
 
       {totalPages > 1 && (
-        <div className="flex justify-center gap-2 mt-4">
-          {Array.from({ length: Math.min(totalPages, 10) }, (_, i) => i + 1).map(p => (
-            <button key={p} onClick={() => setPage(p)}
-              className={`w-8 h-8 rounded-lg text-sm ${p === page ? 'text-white' : 'bg-white text-gray-600 border'}`}
-              style={p === page ? { background: 'var(--theme)' } : {}}>{p}</button>
-          ))}
+        <div className="flex justify-center items-center gap-1 mt-4 flex-wrap">
+          <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
+            className="w-8 h-8 rounded-lg text-sm bg-white text-gray-600 border disabled:opacity-30">‹</button>
+          {getPageNumbers(page, totalPages).map((p, i) =>
+            p === '...'
+              ? <span key={`e${i}`} className="w-8 h-8 flex items-center justify-center text-gray-400 text-sm">…</span>
+              : <button key={p} onClick={() => setPage(p)}
+                  className={`w-8 h-8 rounded-lg text-sm ${p === page ? 'text-white' : 'bg-white text-gray-600 border'}`}
+                  style={p === page ? { background: 'var(--theme)' } : {}}>{p}</button>
+          )}
+          <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
+            className="w-8 h-8 rounded-lg text-sm bg-white text-gray-600 border disabled:opacity-30">›</button>
         </div>
       )}
     </div>

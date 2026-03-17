@@ -24,7 +24,8 @@ export async function GET(req: NextRequest) {
   let q = db.from('students').select('*', { count: 'exact' }).order('name')
 
   if (search) {
-    q = q.or(`name.ilike.%${search}%,phone.ilike.%${search}%,exam_number.ilike.%${search}%`)
+    const escaped = search.replace(/[%_\\]/g, '\\$&')
+    q = q.or(`name.ilike.%${escaped}%,phone.ilike.%${escaped}%,exam_number.ilike.%${escaped}%`)
   }
 
   const { data, count, error } = await q.range(offset, offset + limit - 1)

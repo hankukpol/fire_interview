@@ -8,18 +8,28 @@ export async function middleware(req: NextRequest) {
   const isStaffPath =
     pathname.startsWith('/scan') ||
     pathname.startsWith('/api/distribution/scan') ||
-    pathname.startsWith('/api/distribution/manual')
+    pathname.startsWith('/api/distribution/manual') ||
+    pathname.startsWith('/api/distribution/quick')
+
+  // 학생도 접근 가능한 공개 API (인증 불필요)
+  const isPublicApiRoute =
+    pathname === '/api/students/lookup' ||
+    /^\/api\/students\/[^/]+\/receipts$/.test(pathname) ||
+    (pathname.startsWith('/api/materials') && req.method === 'GET')
 
   // 관리자 보호 경로 (GET /api/config/popups 는 학생도 접근 가능하므로 제외)
   const isAdminPath =
-    pathname.startsWith('/dashboard') ||
-    pathname.startsWith('/api/students') ||
-    pathname.startsWith('/api/materials') ||
-    pathname.startsWith('/api/distribution/logs') ||
-    pathname.startsWith('/api/config/cache') ||
-    pathname.startsWith('/api/auth/admin/logout') ||
-    pathname.startsWith('/api/auth/staff/pin') ||
-    pathname.startsWith('/api/auth/admin/pin')
+    !isPublicApiRoute && (
+      pathname.startsWith('/dashboard') ||
+      pathname.startsWith('/api/students') ||
+      pathname.startsWith('/api/materials') ||
+      pathname.startsWith('/api/distribution/logs') ||
+      pathname.startsWith('/api/distribution/unreceived') ||
+      pathname.startsWith('/api/config/cache') ||
+      pathname.startsWith('/api/auth/admin/logout') ||
+      pathname.startsWith('/api/auth/staff/pin') ||
+      pathname.startsWith('/api/auth/admin/pin')
+    )
 
   if (isAdminPath) {
     const token = req.cookies.get(ADMIN_COOKIE)?.value

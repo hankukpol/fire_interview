@@ -18,10 +18,13 @@ export async function GET(
   // material_id → distributed_at 날짜 문자열
   const receipts: Record<number, string> = {}
   for (const row of data ?? []) {
-    const dateOnly = row.distributed_at.slice(0, 10)
-    // 오늘 수령한 항목만 표시 (접수증용)
-    if (dateOnly === today) {
-      receipts[row.material_id] = row.distributed_at.replace('T', ' ').slice(0, 16)
+    // UTC → KST 날짜로 비교 (오전 9시 이전 배부 버그 방지)
+    const dateKST = new Date(row.distributed_at).toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' })
+    if (dateKST === today) {
+      const timeKST = new Date(row.distributed_at).toLocaleString('ko-KR', {
+        timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hour12: false,
+      })
+      receipts[row.material_id] = timeKST
     }
   }
 

@@ -39,6 +39,8 @@ export async function POST(req: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
+  const inserted = data?.length ?? 0
+  const skipped = rows.length - inserted
   await invalidateCache('students')
-  return NextResponse.json({ inserted: data?.length ?? 0, total: rows.length })
+  return NextResponse.json({ inserted, skipped, total: rows.length })
 }

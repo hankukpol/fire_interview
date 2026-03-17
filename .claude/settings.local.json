@@ -10,7 +10,9 @@
       "Bash(find \"d:/앱 프로그램/interview-receipt-next/src/app/\\(student\\)\" -name \"*.tsx\")",
       "Bash(cat -n \"d:/앱 프로그램/interview-receipt-next/src/app/\\(admin\\)/layout.tsx\")",
       "Bash(python3 -c \":*)",
-      "Bash(git add -A)"
+      "Bash(git add -A)",
+      "Bash(cat \"d:/앱 프로그램/interview-receipt-next/src/app/\\(student\\)/layout.tsx\")",
+      "Bash(cat \"d:/앱 프로그램/interview-receipt-next/src/app/\\(admin\\)/dashboard/page.tsx\")"
     ]
   }
 }
