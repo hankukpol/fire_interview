@@ -4,7 +4,10 @@ import { verifyQrToken } from '@/lib/qr/token'
 import { createServerClient } from '@/lib/supabase/server'
 import { verifyJwt, STAFF_COOKIE, ADMIN_COOKIE } from '@/lib/auth/jwt'
 
-const schema = z.object({ token: z.string().min(1) })
+const schema = z.object({
+  token: z.string().min(1),
+  material_id: z.number().int().positive().optional(),
+})
 
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null)
@@ -31,7 +34,7 @@ export async function POST(req: NextRequest) {
 
   const db = createServerClient()
 
-  // 다음 배부할 자료 결정
+  // 활성화된 자료 목록
   const { data: materials } = await db
     .from('materials')
     .select('id, name')
@@ -42,52 +45,85 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, reason: 'NO_MATERIALS' })
   }
 
-  // 오늘(한국 시간 기준) 이미 배부된 자료 확인
-  const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' })
-  const { data: todayLogs } = await db
-    .from('distribution_logs')
-    .select('material_id')
-    .eq('student_id', qrPayload.sid)
-    .gte('distributed_at', `${today}T00:00:00+09:00`)
-    .lte('distributed_at', `${today}T23:59:59.999+09:00`)
-
-  const todayMaterialIds = new Set((todayLogs ?? []).map(l => l.material_id))
-
-  // 오늘 이미 1회라도 수령한 경우 차단 (1일 1회 제한)
-  if (todayMaterialIds.size > 0) {
-    const mat = materials.find(m => todayMaterialIds.has(m.id))
-    return NextResponse.json({
-      success: false,
-      reason: 'ALREADY_RECEIVED_TODAY',
-      materialName: mat?.name ?? '자료',
-    })
-  }
-
-  // 전체 배부 이력에서 아직 받지 않은 다음 자료 찾기
+  // 전체 배부 이력에서 이미 받은 자료 확인
   const { data: allLogs } = await db
     .from('distribution_logs')
     .select('material_id')
     .eq('student_id', qrPayload.sid)
   const receivedIds = new Set((allLogs ?? []).map(l => l.material_id))
 
-  const nextMaterial = materials.find(m => !receivedIds.has(m.id))
-  if (!nextMaterial) {
+  const unreceived = materials.filter(m => !receivedIds.has(m.id))
+
+  if (unreceived.length === 0) {
     return NextResponse.json({ success: false, reason: 'ALL_RECEIVED' })
   }
 
-  // DB 함수로 원자적 배부 처리
-  const { data: result } = await db.rpc('distribute_material', {
-    p_student_id:  qrPayload.sid,
-    p_material_id: nextMaterial.id,
-    p_staff_label: actorLabel,
-    p_note:        '',
-  })
-
-  if (!result?.success) {
-    return NextResponse.json({ success: false, reason: result?.reason ?? 'DB_ERROR' })
+  // 특정 자료 지정된 경우
+  if (parsed.data.material_id) {
+    const targetMaterial = materials.find(m => m.id === parsed.data.material_id)
+    if (!targetMaterial) {
+      return NextResponse.json({ success: false, reason: 'INVALID_MATERIAL' }, { status: 400 })
+    }
+    if (receivedIds.has(parsed.data.material_id)) {
+      return NextResponse.json({
+        success: false,
+        reason: 'ALREADY_RECEIVED',
+        materialName: targetMaterial.name,
+      })
+    }
+    // 지정 자료 배부
+    const { data: result } = await db.rpc('distribute_material', {
+      p_student_id:  qrPayload.sid,
+      p_material_id: parsed.data.material_id,
+      p_staff_label: actorLabel,
+      p_note:        '',
+    })
+    if (!result?.success) {
+      return NextResponse.json({ success: false, reason: result?.reason ?? 'DB_ERROR' })
+    }
+    const { data: student } = await db
+      .from('students')
+      .select('name, exam_number, series')
+      .eq('id', qrPayload.sid)
+      .single()
+    return NextResponse.json({
+      success: true,
+      materialName: targetMaterial.name,
+      studentName:  student?.name ?? '',
+      examNumber:   student?.exam_number ?? '',
+      series:       student?.series ?? '',
+      distributedAt: new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }),
+    })
   }
 
-  // 학생 정보 조회
+  // 미수령 자료가 1개면 자동 배부
+  if (unreceived.length === 1) {
+    const nextMaterial = unreceived[0]
+    const { data: result } = await db.rpc('distribute_material', {
+      p_student_id:  qrPayload.sid,
+      p_material_id: nextMaterial.id,
+      p_staff_label: actorLabel,
+      p_note:        '',
+    })
+    if (!result?.success) {
+      return NextResponse.json({ success: false, reason: result?.reason ?? 'DB_ERROR' })
+    }
+    const { data: student } = await db
+      .from('students')
+      .select('name, exam_number, series')
+      .eq('id', qrPayload.sid)
+      .single()
+    return NextResponse.json({
+      success: true,
+      materialName: nextMaterial.name,
+      studentName:  student?.name ?? '',
+      examNumber:   student?.exam_number ?? '',
+      series:       student?.series ?? '',
+      distributedAt: new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }),
+    })
+  }
+
+  // 미수령 자료가 여러 개 → 선택 필요
   const { data: student } = await db
     .from('students')
     .select('name, exam_number, series')
@@ -95,11 +131,12 @@ export async function POST(req: NextRequest) {
     .single()
 
   return NextResponse.json({
-    success: true,
-    materialName: nextMaterial.name,
+    success: false,
+    reason: 'NEEDS_SELECTION',
+    needsSelection: true,
+    unreceived,
     studentName:  student?.name ?? '',
     examNumber:   student?.exam_number ?? '',
     series:       student?.series ?? '',
-    distributedAt: new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }),
   })
 }

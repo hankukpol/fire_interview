@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 
-type ScanState = 'idle' | 'scanning' | 'processing' | 'success' | 'error'
+type ScanState = 'idle' | 'scanning' | 'processing' | 'selecting' | 'success' | 'error'
 type TabMode = 'qr' | 'quick'
 
 interface ScanResult {
@@ -13,6 +13,8 @@ interface ScanResult {
   examNumber?: string
   series?: string
   distributedAt?: string
+  needsSelection?: boolean
+  unreceived?: { id: number; name: string }[]
 }
 
 interface Material { id: number; name: string; is_active: boolean }
@@ -24,6 +26,7 @@ export default function ScanPage() {
   const [lastStudentName, setLastStudentName] = useState('')
   const scannerRef = useRef<unknown>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  const pendingTokenRef = useRef<string>('')
 
   // 빠른 배부
   const [materials, setMaterials] = useState<Material[]>([])
@@ -83,10 +86,28 @@ export default function ScanPage() {
     scannerRef.current = null
     let token = decodedText
     try { const url = new URL(decodedText); token = url.searchParams.get('token') ?? decodedText } catch { /* not URL */ }
+    pendingTokenRef.current = token
     const res = await fetch('/api/distribution/scan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) })
     const data: ScanResult = await res.json()
     setResult(data)
     if (data.studentName) setLastStudentName(data.studentName)
+    if (data.needsSelection) {
+      setState('selecting')
+    } else {
+      setState(data.success ? 'success' : 'error')
+    }
+  }
+
+  async function handleSelectMaterial(materialId: number) {
+    setState('processing')
+    const token = pendingTokenRef.current
+    const res = await fetch('/api/distribution/scan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, material_id: materialId }),
+    })
+    const data: ScanResult = await res.json()
+    setResult(data)
     setState(data.success ? 'success' : 'error')
   }
 
@@ -111,13 +132,13 @@ export default function ScanPage() {
   }
 
   const bgColors: Record<ScanState, string> = {
-    idle: '#F0F2F8', scanning: '#F0F2F8', processing: '#F0F2F8', success: '#E8F5E9', error: '#FFF3E0',
+    idle: '#F0F2F8', scanning: '#F0F2F8', processing: '#F0F2F8', selecting: '#F0F2F8', success: '#E8F5E9', error: '#FFF3E0',
   }
 
   const resultTitle = () => {
     if (!result) return ''
     if (result.success) return `${result.materialName} 배부 완료`
-    if (result.reason === 'ALREADY_RECEIVED_TODAY') return '오늘 이미 수령했습니다'
+    if (result.reason === 'ALREADY_RECEIVED') return '이미 수령한 자료입니다'
     if (result.reason === 'ALL_RECEIVED') return '모든 자료를 수령했습니다'
     if (result.reason === 'INVALID_TOKEN') return '유효하지 않은 QR 코드'
     return result.reason ?? '처리 실패'
@@ -172,6 +193,35 @@ export default function ScanPage() {
             <>
               <div className="w-16 h-16 border-4 border-blue-900 border-t-transparent rounded-full animate-spin mb-6 mt-12" />
               <p className="text-lg font-medium text-gray-700">처리 중...</p>
+            </>
+          )}
+
+          {/* ── 자료 선택 화면 ── */}
+          {state === 'selecting' && result && (
+            <>
+              <div className="w-full max-w-sm mb-5">
+                <div className="bg-white border border-gray-100 p-4 mb-4">
+                  {result.studentName && <div className="flex justify-between py-2 border-b border-gray-50"><span className="text-sm text-gray-500">이름</span><span className="text-sm font-semibold">{result.studentName}</span></div>}
+                  {result.examNumber && <div className="flex justify-between py-2 border-b border-gray-50"><span className="text-sm text-gray-500">수험번호</span><span className="text-sm font-semibold">{result.examNumber}</span></div>}
+                  {result.series && <div className="flex justify-between py-2"><span className="text-sm text-gray-500">직렬</span><span className="text-sm font-semibold">{result.series}</span></div>}
+                </div>
+                <p className="text-sm font-semibold text-gray-700 mb-3">배부할 자료를 선택하세요</p>
+                <div className="flex flex-col gap-2">
+                  {(result.unreceived ?? []).map(m => (
+                    <button
+                      key={m.id}
+                      onClick={() => handleSelectMaterial(m.id)}
+                      className="w-full py-3 text-white font-bold text-base"
+                      style={{ background: 'var(--theme)' }}
+                    >
+                      {m.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <button onClick={() => { setResult(null); setState('idle') }} className="w-full max-w-sm py-3 bg-gray-200 text-gray-600 font-medium text-sm">
+                취소
+              </button>
             </>
           )}
 
