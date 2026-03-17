@@ -3,6 +3,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { unstable_cache } from 'next/cache'
 import { revalidateTag } from 'next/cache'
 import { z } from 'zod'
+import { verifyJwt, ADMIN_COOKIE } from '@/lib/auth/jwt'
 
 const getPopups = unstable_cache(
   async () => {
@@ -27,6 +28,12 @@ const patchSchema = z.object({
 })
 
 export async function PATCH(req: NextRequest) {
+  const token = req.cookies.get(ADMIN_COOKIE)?.value
+  const payload = token ? await verifyJwt(token) : null
+  if (!payload || payload.role !== 'admin') {
+    return NextResponse.json({ error: '권한이 없습니다.' }, { status: 403 })
+  }
+
   let body: unknown
   try {
     body = await req.json()

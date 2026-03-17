@@ -1,8 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { normalizePhone, normalizeName } from '@/lib/utils'
+
+const LS_NAME = 'student_name'
+const LS_PHONE = 'student_phone'
 
 export default function StudentLoginPage() {
   const router = useRouter()
@@ -10,6 +13,13 @@ export default function StudentLoginPage() {
   const [phone, setPhone] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    const savedName = localStorage.getItem(LS_NAME) ?? ''
+    const savedPhone = localStorage.getItem(LS_PHONE) ?? ''
+    if (savedName) setName(savedName)
+    if (savedPhone) setPhone(savedPhone)
+  }, [])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -27,7 +37,8 @@ export default function StudentLoginPage() {
       })
       const data = await res.json()
       if (!res.ok) { setError(data.error ?? '로그인에 실패했습니다.'); return }
-      // QR 토큰을 sessionStorage에 저장 후 접수증 페이지로 이동
+      localStorage.setItem(LS_NAME, name)
+      localStorage.setItem(LS_PHONE, phone)
       sessionStorage.setItem('qr_token', data.token)
       sessionStorage.setItem('student', JSON.stringify(data.student))
       router.push('/receipt')
@@ -53,7 +64,7 @@ export default function StudentLoginPage() {
       {/* 로그인 폼 */}
       <form
         onSubmit={handleSubmit}
-        className="flex-1 flex flex-col gap-5 p-6 md:rounded-2xl md:shadow-md md:mt-6"
+        className="flex-1 flex flex-col gap-5 p-6"
       >
         <div className="flex flex-col gap-2">
           <label className="text-sm font-medium text-gray-700">이름</label>
@@ -63,7 +74,7 @@ export default function StudentLoginPage() {
             onChange={e => setName(e.target.value)}
             placeholder="홍길동"
             autoComplete="name"
-            className="w-full px-4 py-3 border border-gray-300 rounded-lg text-base focus:outline-none focus:border-blue-900"
+            className="w-full px-4 py-3 border border-gray-300 text-base focus:outline-none focus:border-blue-900"
           />
         </div>
         <div className="flex flex-col gap-2">
@@ -75,7 +86,7 @@ export default function StudentLoginPage() {
             placeholder="01012345678"
             autoComplete="tel"
             inputMode="numeric"
-            className="w-full px-4 py-3 border border-gray-300 rounded-lg text-base focus:outline-none focus:border-blue-900"
+            className="w-full px-4 py-3 border border-gray-300 text-base focus:outline-none focus:border-blue-900"
           />
         </div>
 
@@ -86,7 +97,7 @@ export default function StudentLoginPage() {
         <button
           type="submit"
           disabled={loading}
-          className="w-full py-3 rounded-lg text-white font-medium text-base transition-opacity disabled:opacity-60"
+          className="w-full py-3 text-white font-medium text-base transition-opacity disabled:opacity-60"
           style={{ background: 'var(--theme)' }}
         >
           {loading ? '로그인 중...' : '로그인'}

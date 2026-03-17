@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx next build)",
+      "Bash(git add src/app/\\\\\\(admin\\\\\\)/dashboard/students/page.tsx src/app/\\\\\\(student\\\\\\)/receipt/page.tsx src/app/api/students/bulk/)",
+      "Bash(git commit:*)",
+      "Bash(git push origin master:main)",
+      "Bash(find \"d:/앱 프로그램/interview-receipt-next/src/app/\\(admin\\)\" -name \"*.tsx\")",
+      "Bash(find \"d:/앱 프로그램/interview-receipt-next/src/app/\\(staff\\)\" -name \"*.tsx\")",
+      "Bash(find \"d:/앱 프로그램/interview-receipt-next/src/app/\\(student\\)\" -name \"*.tsx\")",
+      "Bash(cat -n \"d:/앱 프로그램/interview-receipt-next/src/app/\\(admin\\)/layout.tsx\")",
+      "Bash(python3 -c \":*)",
+      "Bash(git add -A)"
+    ]
+  }
+}

@@ -16,6 +16,7 @@ export default function LogsPage() {
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(false)
+  const [deletingId, setDeletingId] = useState<number | null>(null)
   const PAGE_SIZE = 50
 
   const load = useCallback(async () => {
@@ -30,6 +31,14 @@ export default function LogsPage() {
 
   useEffect(() => { load() }, [load])
 
+  async function handleDelete(id: number) {
+    if (!confirm('이 배부 기록을 삭제하시겠습니까?')) return
+    setDeletingId(id)
+    await fetch(`/api/distribution/logs/${id}`, { method: 'DELETE' })
+    setDeletingId(null)
+    load()
+  }
+
   const totalPages = Math.ceil(total / PAGE_SIZE)
 
   return (
@@ -42,7 +51,7 @@ export default function LogsPage() {
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b border-gray-100">
             <tr>
-              {['일시','학생','수험번호','직렬','자료','처리자'].map(h => (
+              {['일시','학생','수험번호','직렬','자료','처리자',''].map(h => (
                 <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-500">{h}</th>
               ))}
             </tr>
@@ -66,6 +75,15 @@ export default function LogsPage() {
                   </span>
                 </td>
                 <td className="px-4 py-3 text-gray-500 text-xs">{l.distributed_by || '-'}</td>
+                <td className="px-4 py-3">
+                  <button
+                    onClick={() => handleDelete(l.id)}
+                    disabled={deletingId === l.id}
+                    className="text-xs text-red-500 hover:underline disabled:opacity-40"
+                  >
+                    삭제
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>

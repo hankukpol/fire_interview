@@ -30,9 +30,16 @@ export default function ReceiptPage() {
     Promise.all([
       fetch('/api/materials').then(r => r.json()),
       fetch(`/api/students/${student.id}/receipts`).then(r => r.json()),
-      fetch('/api/config/popups').then(r => r.json()),
-    ]).then(([mats, rec, pop]) => {
-      setData({ student, materials: mats.materials ?? [], receipts: rec.receipts ?? {}, token, popups: pop })
+      fetch(`/api/config/popups`).then(r => r.json()),
+    ]).then(([mats, rec, popArr]) => {
+      const arr = Array.isArray(popArr) ? popArr : []
+      const noticeRow = arr.find((p: { popup_key: string }) => p.popup_key === 'notice')
+      const refundRow = arr.find((p: { popup_key: string }) => p.popup_key === 'refund_policy')
+      const popups = {
+        notice: { title: noticeRow?.title ?? '공지사항', body: noticeRow?.body ?? '', active: noticeRow?.is_active ?? false },
+        refund: { title: refundRow?.title ?? '환불규정', body: refundRow?.body ?? '' },
+      }
+      setData({ student, materials: mats.materials ?? [], receipts: rec.receipts ?? {}, token, popups })
     })
 
     // 날짜 표시 타이머

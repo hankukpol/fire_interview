@@ -10,13 +10,12 @@ export async function middleware(req: NextRequest) {
     pathname.startsWith('/api/distribution/scan') ||
     pathname.startsWith('/api/distribution/manual')
 
-  // 관리자 보호 경로
+  // 관리자 보호 경로 (GET /api/config/popups 는 학생도 접근 가능하므로 제외)
   const isAdminPath =
     pathname.startsWith('/dashboard') ||
     pathname.startsWith('/api/students') ||
     pathname.startsWith('/api/materials') ||
     pathname.startsWith('/api/distribution/logs') ||
-    pathname.startsWith('/api/config/popups') ||
     pathname.startsWith('/api/config/cache') ||
     pathname.startsWith('/api/auth/admin/logout') ||
     pathname.startsWith('/api/auth/staff/pin') ||
