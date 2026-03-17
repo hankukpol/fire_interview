@@ -1,0 +1,72 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
+import { createServerClient } from '@/lib/supabase/server'
+import { normalizePhone, normalizeName } from '@/lib/utils'
+import { invalidateCache } from '@/lib/cache/revalidate'
+
+const patchSchema = z.object({
+  name: z.string().min(1).optional(),
+  phone: z.string().min(10).optional(),
+  exam_number: z.string().optional(),
+  gender: z.string().optional(),
+  region: z.string().optional(),
+  series: z.string().optional(),
+})
+
+export async function GET(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id } = await params
+  const db = createServerClient()
+  const { data, error } = await db
+    .from('students')
+    .select('*, distribution_logs(id, material_id, distributed_at, materials(name))')
+    .eq('id', id)
+    .single()
+  if (error) return NextResponse.json({ error: error.message }, { status: 404 })
+  return NextResponse.json({ student: data })
+}
+
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id } = await params
+  const body = await req.json().catch(() => null)
+  const parsed = patchSchema.safeParse(body)
+  if (!parsed.success) {
+    return NextResponse.json({ error: '입력값이 올바르지 않습니다.' }, { status: 400 })
+  }
+
+  const update: Record<string, unknown> = { updated_at: new Date().toISOString() }
+  if (parsed.data.name)  update.name  = normalizeName(parsed.data.name)
+  if (parsed.data.phone) update.phone = normalizePhone(parsed.data.phone)
+  if (parsed.data.exam_number !== undefined) update.exam_number = parsed.data.exam_number || null
+  if (parsed.data.gender  !== undefined) update.gender  = parsed.data.gender  || null
+  if (parsed.data.region  !== undefined) update.region  = parsed.data.region  || null
+  if (parsed.data.series  !== undefined) update.series  = parsed.data.series  || null
+
+  const db = createServerClient()
+  const { data, error } = await db
+    .from('students')
+    .update(update)
+    .eq('id', id)
+    .select()
+    .single()
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  await invalidateCache('students')
+  return NextResponse.json({ student: data })
+}
+
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id } = await params
+  const db = createServerClient()
+  const { error } = await db.from('students').delete().eq('id', id)
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  await invalidateCache('students')
+  return NextResponse.json({ success: true })
+}
