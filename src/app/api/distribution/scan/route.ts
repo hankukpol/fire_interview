@@ -42,18 +42,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, reason: 'NO_MATERIALS' })
   }
 
-  // 오늘 이미 배부된 자료 확인
+  // 오늘(한국 시간 기준) 이미 배부된 자료 확인
   const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' })
   const { data: todayLogs } = await db
     .from('distribution_logs')
-    .select('material_id, distributed_at')
+    .select('material_id')
     .eq('student_id', qrPayload.sid)
-    .gte('distributed_at', `${today}T00:00:00`)
-    .lt('distributed_at', `${today}T23:59:59`)
+    .gte('distributed_at', `${today}T00:00:00+09:00`)
+    .lte('distributed_at', `${today}T23:59:59.999+09:00`)
 
   const todayMaterialIds = new Set((todayLogs ?? []).map(l => l.material_id))
 
-  // 오늘 이미 수령한 경우 차단
+  // 오늘 이미 1회라도 수령한 경우 차단 (1일 1회 제한)
   if (todayMaterialIds.size > 0) {
     const mat = materials.find(m => todayMaterialIds.has(m.id))
     return NextResponse.json({

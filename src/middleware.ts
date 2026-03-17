@@ -4,6 +4,18 @@ import { verifyJwt, STAFF_COOKIE, ADMIN_COOKIE } from '@/lib/auth/jwt'
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl
 
+  // 이미 인증된 관리자가 로그인 페이지 접근 시 대시보드로 자동 리디렉션
+  if (pathname === '/admin/login') {
+    const token = req.cookies.get(ADMIN_COOKIE)?.value
+    if (token) {
+      const payload = await verifyJwt(token)
+      if (payload?.role === 'admin') {
+        return NextResponse.redirect(new URL('/dashboard', req.url))
+      }
+    }
+    return NextResponse.next()
+  }
+
   // 직원 보호 경로
   const isStaffPath =
     pathname.startsWith('/scan') ||
@@ -28,7 +40,8 @@ export async function middleware(req: NextRequest) {
       pathname.startsWith('/api/config/cache') ||
       pathname.startsWith('/api/auth/admin/logout') ||
       pathname.startsWith('/api/auth/staff/pin') ||
-      pathname.startsWith('/api/auth/admin/pin')
+      pathname.startsWith('/api/auth/admin/pin') ||
+      pathname.startsWith('/api/auth/admin/id')
     )
 
   if (isAdminPath) {
@@ -72,6 +85,7 @@ export async function middleware(req: NextRequest) {
 
 export const config = {
   matcher: [
+    '/admin/login',
     '/scan/:path*',
     '/dashboard/:path*',
     '/api/students/:path*',
@@ -81,5 +95,6 @@ export const config = {
     '/api/auth/admin/logout',
     '/api/auth/staff/pin',
     '/api/auth/admin/pin',
+    '/api/auth/admin/id',
   ],
 }

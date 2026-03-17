@@ -30,3 +30,25 @@ export async function setPinHash(
     .update({ config_value: hash, updated_at: new Date().toISOString() })
     .eq('config_key', key)
 }
+
+export async function getAdminId(): Promise<string> {
+  const db = createServerClient()
+  const { data } = await db
+    .from('app_config')
+    .select('config_value')
+    .eq('config_key', 'admin_id')
+    .single()
+  return (data?.config_value as string) ?? ''
+}
+
+export async function setAdminId(id: string): Promise<void> {
+  const db = createServerClient()
+  await db
+    .from('app_config')
+    .upsert({
+      config_key: 'admin_id',
+      config_value: id,
+      description: '관리자 아이디',
+      updated_at: new Date().toISOString(),
+    })
+}

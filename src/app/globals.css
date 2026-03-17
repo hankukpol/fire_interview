@@ -1,5 +1,9 @@
 @import "tailwindcss";
 
+@theme {
+  --font-sans: 'Pretendard', 'Apple SD Gothic Neo', sans-serif;
+}
+
 :root {
   --theme: #1a237e;
   --background: #ffffff;
@@ -8,6 +12,8 @@
 
 * {
   box-sizing: border-box;
+  border-radius: 0 !important;
+  box-shadow: none !important;
 }
 
 html,

@@ -6,7 +6,7 @@ const secret = () => new TextEncoder().encode(process.env.JWT_SECRET!)
 export const STAFF_COOKIE  = 'staff_token'
 export const ADMIN_COOKIE  = 'admin_token'
 export const STAFF_TTL_SEC = 8 * 60 * 60   // 8시간
-export const ADMIN_TTL_SEC = 4 * 60 * 60   // 4시간
+export const ADMIN_TTL_SEC = 8 * 60 * 60   // 8시간
 
 export async function signJwt(
   role: 'staff' | 'admin',

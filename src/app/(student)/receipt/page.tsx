@@ -10,10 +10,11 @@ interface ReceiptData {
   materials: Material[]
   receipts: Record<number, string>   // material_id → distributed_at
   token: string
+  appName: string
   popups: { notice: { title: string; body: string; active: boolean }; refund: { title: string; body: string } }
 }
 
-const POLL_INTERVAL = 30000 // 30초
+const POLL_INTERVAL = 10000 // 10초
 
 export default function ReceiptPage() {
   const router = useRouter()
@@ -71,7 +72,8 @@ export default function ReceiptPage() {
       fetch('/api/materials').then(r => { if (!r.ok) throw new Error(); return r.json() }),
       fetch(`/api/students/${student.id}/receipts`).then(r => { if (!r.ok) throw new Error(); return r.json() }),
       fetch(`/api/config/popups`).then(r => r.json()),
-    ]).then(([mats, rec, popArr]) => {
+      fetch(`/api/config/app`).then(r => r.json()),
+    ]).then(([mats, rec, popArr, appCfg]) => {
       const arr = Array.isArray(popArr) ? popArr : []
       const noticeRow = arr.find((p: { popup_key: string }) => p.popup_key === 'notice')
       const refundRow = arr.find((p: { popup_key: string }) => p.popup_key === 'refund_policy')
@@ -80,8 +82,9 @@ export default function ReceiptPage() {
         refund: { title: refundRow?.title ?? '환불규정', body: refundRow?.body ?? '' },
       }
       const receipts = rec.receipts ?? {}
+      const appName = appCfg?.app_name ?? '면접 모바일 접수증'
       prevReceiptsRef.current = receipts
-      setData({ student, materials: mats.materials ?? [], receipts, token, popups })
+      setData({ student, materials: mats.materials ?? [], receipts, token, appName, popups })
     }).catch(() => setFetchError(true))
 
     // 날짜 표시 타이머
@@ -94,7 +97,7 @@ export default function ReceiptPage() {
     updateDate()
     timerRef.current = setInterval(updateDate, 60000)
 
-    // 30초 폴링
+    // 10초 폴링
     pollRef.current = setInterval(fetchReceipts, POLL_INTERVAL)
 
     return () => {
@@ -115,7 +118,7 @@ export default function ReceiptPage() {
         <p className="text-gray-500 text-center">데이터를 불러오지 못했습니다.<br />잠시 후 다시 시도해 주세요.</p>
         <button
           onClick={() => { setFetchError(false); window.location.reload() }}
-          className="px-6 py-2 text-sm text-white font-medium rounded-lg"
+          className="px-6 py-2 text-sm text-white font-medium"
           style={{ background: 'var(--theme)' }}
         >
           다시 시도
@@ -134,13 +137,16 @@ export default function ReceiptPage() {
 
   const { student, materials, receipts, token } = data
   const qrUrl = `${typeof window !== 'undefined' ? window.location.origin : ''}/scan?token=${encodeURIComponent(token)}`
-  const nextMaterialId = materials.find(m => m.is_active && !receipts[m.id])?.id
+  const activeMaterials = materials.filter(m => m.is_active)
+  const receivedCount = activeMaterials.filter(m => !!receipts[m.id]).length
+  const allReceived = activeMaterials.length > 0 && receivedCount === activeMaterials.length
+  const nextMaterialId = activeMaterials.find(m => !receipts[m.id])?.id
 
   return (
     <div className="flex flex-col min-h-dvh">
       {/* 헤더 */}
       <div className="text-white text-center py-5 px-4" style={{ background: 'var(--theme)' }}>
-        <h1 className="text-xl font-bold">최준 면접 모바일 접수증</h1>
+        <h1 className="text-xl font-bold">{data.appName}</h1>
         <p className="text-sm mt-1 text-white/80">{dateStr}</p>
       </div>
 
@@ -165,14 +171,45 @@ export default function ReceiptPage() {
         </table>
       </section>
 
+      {/* QR 코드 */}
+      <section className="p-4 border-t border-gray-100 text-center">
+        <h2 className="text-sm font-bold mb-3" style={{ color: 'var(--theme)' }}>개인 QR 코드</h2>
+        <div className="inline-block p-3 border-2 border-gray-100 mb-2">
+          <QRCodeSVG value={qrUrl} size={220} level="M" />
+        </div>
+        <p className="text-sm font-medium" style={{ color: 'var(--theme)' }}>
+          인증된 직원 휴대폰으로 QR을 스캔해 주세요
+        </p>
+      </section>
+
       {/* 자료 수령 현황 */}
       <section className="p-4 border-t border-gray-100">
-        <h2 className="text-sm font-bold mb-3" style={{ color: 'var(--theme)' }}>자료 수령 현황</h2>
-        {materials.filter(m => m.is_active).length === 0 && (
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-bold" style={{ color: 'var(--theme)' }}>자료 수령 현황</h2>
+          {activeMaterials.length > 0 && (
+            <span
+              className={`text-xs font-bold px-2 py-0.5 ${
+                allReceived ? 'bg-green-100 text-green-700' : 'bg-blue-50 text-blue-700'
+              }`}
+            >
+              {receivedCount} / {activeMaterials.length} 수령
+            </span>
+          )}
+        </div>
+
+        {/* 모두 수령 완료 배너 */}
+        {allReceived && (
+          <div className="mb-3 py-3 px-4 bg-green-50 border border-green-200 flex items-center gap-2">
+            <span className="text-green-700 text-base">✓</span>
+            <span className="text-sm font-bold text-green-800">모든 자료를 수령하였습니다!</span>
+          </div>
+        )}
+
+        {activeMaterials.length === 0 && (
           <p className="text-sm text-gray-400 py-2">배부 예정 자료가 없습니다.</p>
         )}
         <ul className="flex flex-col gap-1">
-          {materials.filter(m => m.is_active).map(m => {
+          {activeMaterials.map(m => {
             const received = !!receipts[m.id]
             const isNext = m.id === nextMaterialId
             const isNew = newlyReceived.has(m.id)
@@ -207,19 +244,8 @@ export default function ReceiptPage() {
         </ul>
       </section>
 
-      {/* QR 코드 */}
-      <section className="p-4 border-t border-gray-100 text-center">
-        <h2 className="text-sm font-bold mb-3" style={{ color: 'var(--theme)' }}>개인 QR 코드</h2>
-        <div className="inline-block p-3 border-2 border-gray-100 mb-2">
-          <QRCodeSVG value={qrUrl} size={220} level="M" />
-        </div>
-        <p className="text-sm font-medium" style={{ color: 'var(--theme)' }}>
-          인증된 직원 휴대폰으로 QR을 스캔해 주세요
-        </p>
-      </section>
-
       {/* 팝업 버튼 */}
-      <div className="flex gap-3 px-4 pb-2">
+      <div className="flex gap-3 px-4 pb-2 mt-auto">
         {data.popups?.notice?.active && (
           <button
             onClick={() => setModal('notice')}
@@ -239,7 +265,12 @@ export default function ReceiptPage() {
       </div>
       <div className="px-4 pb-6">
         <button
-          onClick={() => { sessionStorage.clear(); router.push('/') }}
+          onClick={() => {
+            if (window.confirm('처음 화면으로 돌아가시겠습니까?')) {
+              sessionStorage.clear()
+              router.push('/')
+            }
+          }}
           className="w-full py-3 text-sm text-gray-500 border border-gray-200"
         >
           처음으로
@@ -249,21 +280,36 @@ export default function ReceiptPage() {
       {/* 팝업 모달 */}
       {modal && (
         <div
-          className="fixed inset-0 bg-black/50 z-50 flex items-end justify-center"
+          className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center px-5"
           onClick={() => setModal(null)}
         >
           <div
-            className="bg-white w-full max-w-[768px] max-h-[75vh] flex flex-col"
+            className="bg-white w-full max-w-sm flex flex-col overflow-hidden"
+            style={{ maxHeight: '80dvh' }}
             onClick={e => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between px-5 py-4 border-b">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
               <span className="text-base font-bold" style={{ color: 'var(--theme)' }}>
                 {modal === 'notice' ? data.popups.notice.title : data.popups.refund.title}
               </span>
-              <button onClick={() => setModal(null)} className="text-gray-400 text-xl p-1">✕</button>
+              <button
+                onClick={() => setModal(null)}
+                className="w-8 h-8 flex items-center justify-center text-gray-400 text-lg hover:bg-gray-100"
+              >
+                ✕
+              </button>
             </div>
             <div className="p-5 overflow-y-auto text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
               {modal === 'notice' ? data.popups.notice.body : data.popups.refund.body}
+            </div>
+            <div className="px-5 py-3 border-t border-gray-100">
+              <button
+                onClick={() => setModal(null)}
+                className="w-full py-2.5 text-sm font-medium text-white"
+                style={{ background: 'var(--theme)' }}
+              >
+                닫기
+              </button>
             </div>
           </div>
         </div>

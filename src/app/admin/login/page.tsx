@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 
 export default function AdminLoginPage() {
   const router = useRouter()
+  const [id, setId] = useState('')
   const [pin, setPin] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -17,7 +18,7 @@ export default function AdminLoginPage() {
     const res = await fetch('/api/auth/admin/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pin }),
+      body: JSON.stringify({ id, pin }),
     })
     const data = await res.json()
     setLoading(false)
@@ -34,6 +35,17 @@ export default function AdminLoginPage() {
           </h1>
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             <div className="flex flex-col gap-1">
+              <label className="text-sm font-medium text-gray-700">관리자 아이디</label>
+              <input
+                type="text"
+                value={id}
+                onChange={e => setId(e.target.value)}
+                placeholder="아이디 (미설정 시 생략 가능)"
+                autoComplete="username"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg text-base focus:outline-none focus:border-blue-900"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
               <label className="text-sm font-medium text-gray-700">관리자 PIN</label>
               <input
                 type="password"
@@ -41,6 +53,7 @@ export default function AdminLoginPage() {
                 onChange={e => setPin(e.target.value)}
                 placeholder="관리자 PIN"
                 inputMode="numeric"
+                autoComplete="current-password"
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg text-base focus:outline-none focus:border-blue-900"
               />
             </div>
