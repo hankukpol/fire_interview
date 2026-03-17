@@ -11,7 +11,7 @@ interface ReceiptData {
   receipts: Record<number, string>   // material_id → distributed_at
   token: string
   appName: string
-  popups: { notice: { title: string; body: string; active: boolean }; refund: { title: string; body: string } }
+  popups: { notice: { title: string; body: string; active: boolean }; refund: { title: string; body: string; active: boolean } }
 }
 
 const POLL_INTERVAL = 10000 // 10초
@@ -79,12 +79,13 @@ export default function ReceiptPage() {
       const refundRow = arr.find((p: { popup_key: string }) => p.popup_key === 'refund_policy')
       const popups = {
         notice: { title: noticeRow?.title ?? '공지사항', body: noticeRow?.body ?? '', active: noticeRow?.is_active ?? false },
-        refund: { title: refundRow?.title ?? '환불규정', body: refundRow?.body ?? '' },
+        refund: { title: refundRow?.title ?? '환불규정', body: refundRow?.body ?? '', active: refundRow?.is_active ?? false },
       }
       const receipts = rec.receipts ?? {}
       const appName = appCfg?.app_name ?? '면접 모바일 접수증'
       prevReceiptsRef.current = receipts
       setData({ student, materials: mats.materials ?? [], receipts, token, appName, popups })
+      if (popups.notice.active) setModal('notice')
     }).catch(() => setFetchError(true))
 
     // 날짜 표시 타이머
@@ -255,13 +256,15 @@ export default function ReceiptPage() {
             공지사항
           </button>
         )}
-        <button
-          onClick={() => setModal('refund')}
-          className="flex-1 py-3 text-sm font-medium"
-          style={{ background: '#e8eaf6', color: 'var(--theme)' }}
-        >
-          환불규정
-        </button>
+        {data.popups?.refund?.active && (
+          <button
+            onClick={() => setModal('refund')}
+            className="flex-1 py-3 text-sm font-medium"
+            style={{ background: '#e8eaf6', color: 'var(--theme)' }}
+          >
+            환불규정
+          </button>
+        )}
       </div>
       <div className="px-4 pb-6">
         <button

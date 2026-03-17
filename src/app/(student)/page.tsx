@@ -48,18 +48,6 @@ export default function StudentLoginPage() {
     setError('')
     setLoading(true)
     try {
-      // 관리자 로그인 시도 (이름 = 관리자 아이디, 연락처 = PIN)
-      const adminRes = await fetch('/api/auth/admin/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: loginName, pin: loginPhone }),
-      })
-      if (adminRes.ok) {
-        router.push('/dashboard')
-        return
-      }
-
-      // 학생 로그인
       if (p.length < 10) { setError('연락처를 올바르게 입력해 주세요. (숫자 10자리 이상)'); return }
       const res = await fetch('/api/students/lookup', {
         method: 'POST',

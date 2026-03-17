@@ -27,7 +27,7 @@ export default function ScanPage() {
 
   // 빠른 배부
   const [materials, setMaterials] = useState<Material[]>([])
-  const [quickExam, setQuickExam] = useState('')
+  const [quickPhone, setQuickPhone] = useState('')
   const [quickMatId, setQuickMatId] = useState<number | null>(null)
   const [quickLoading, setQuickLoading] = useState(false)
   const [quickMsg, setQuickMsg] = useState<{ text: string; ok: boolean } | null>(null)
@@ -91,19 +91,19 @@ export default function ScanPage() {
   }
 
   async function handleQuickDistribute() {
-    if (!quickExam.trim() || !quickMatId) return
+    if (!quickPhone.trim() || !quickMatId) return
     setQuickLoading(true)
     setQuickMsg(null)
     const res = await fetch('/api/distribution/quick', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ exam_number: quickExam.trim(), material_id: quickMatId }),
+      body: JSON.stringify({ phone: quickPhone.replace(/\D/g, ''), material_id: quickMatId }),
     })
     const data = await res.json()
     setQuickLoading(false)
     if (res.ok) {
       setQuickMsg({ text: `✓ ${data.student_name} — ${data.material_name} 배부 완료`, ok: true })
-      setQuickExam('')
+      setQuickPhone('')
     } else {
       setQuickMsg({ text: data.error ?? '배부 실패', ok: false })
     }
@@ -135,7 +135,7 @@ export default function ScanPage() {
             className="flex-1 py-2.5 text-sm font-medium transition-colors"
             style={tab === t ? { background: 'var(--theme)', color: '#fff' } : { background: '#fff', color: '#6b7280' }}
           >
-            {t === 'qr' ? 'QR 스캔' : '수험번호 입력'}
+            {t === 'qr' ? 'QR 스캔' : '번호 입력'}
           </button>
         ))}
       </div>
@@ -197,19 +197,20 @@ export default function ScanPage() {
         </>
       )}
 
-      {/* ── 수험번호 입력 탭 ── */}
+      {/* ── 핸드폰 번호 입력 탭 ── */}
       {tab === 'quick' && (
         <div className="w-full max-w-sm">
-          <h1 className="text-xl font-bold mb-6 text-gray-900">수험번호로 빠른 배부</h1>
+          <h1 className="text-xl font-bold mb-6 text-gray-900">핸드폰 번호로 빠른 배부</h1>
           <div className="flex flex-col gap-4">
             <div>
-              <label className="text-sm font-medium text-gray-600 block mb-1">수험번호</label>
+              <label className="text-sm font-medium text-gray-600 block mb-1">핸드폰 번호</label>
               <input
-                type="text"
-                value={quickExam}
-                onChange={e => setQuickExam(e.target.value)}
+                type="tel"
+                value={quickPhone}
+                onChange={e => setQuickPhone(e.target.value.replace(/\D/g, ''))}
                 onKeyDown={e => e.key === 'Enter' && handleQuickDistribute()}
-                placeholder="예: 211-101-0707"
+                placeholder="예: 01012345678"
+                inputMode="numeric"
                 className="w-full px-4 py-3 border border-gray-300 text-base focus:outline-none focus:border-blue-900"
                 autoFocus
               />
@@ -233,7 +234,7 @@ export default function ScanPage() {
             </div>
             <button
               onClick={handleQuickDistribute}
-              disabled={quickLoading || !quickExam.trim() || !quickMatId}
+              disabled={quickLoading || !quickPhone.trim() || !quickMatId}
               className="w-full py-3 text-white font-bold text-base disabled:opacity-50"
               style={{ background: 'var(--theme)' }}
             >
@@ -249,7 +250,13 @@ export default function ScanPage() {
       )}
 
       <button
-        onClick={async () => { await fetch('/api/auth/staff/logout', { method: 'POST' }); window.location.href = '/staff/login' }}
+        onClick={async () => {
+          await fetch('/api/auth/staff/logout', { method: 'POST' })
+          localStorage.removeItem('staff_auth_mode')
+          localStorage.removeItem('staff_auth_id')
+          localStorage.removeItem('staff_auth_pin')
+          window.location.href = '/staff/login'
+        }}
         className="mt-8 text-xs text-gray-400 underline"
       >
         이 휴대폰 인증 해제

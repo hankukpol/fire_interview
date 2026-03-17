@@ -6,8 +6,8 @@ import { normalizePhone, normalizeName } from '@/lib/utils'
 
 const schema = z.object({
   exam_number: z.string().min(1).optional(),
-  name: z.string().min(1).optional(),
   phone: z.string().min(1).optional(),
+  name: z.string().min(1).optional(),
   material_id: z.number().int().positive(),
 })
 
@@ -24,9 +24,11 @@ export async function POST(req: NextRequest) {
   if (exam_number) {
     const { data } = await db.from('students').select('id,name').eq('exam_number', exam_number.trim()).maybeSingle()
     student = data
-  } else if (name && phone) {
-    const { data } = await db.from('students').select('id,name')
-      .eq('name', normalizeName(name)).eq('phone', normalizePhone(phone)).maybeSingle()
+  } else if (phone) {
+    const normalized = normalizePhone(phone)
+    const q = db.from('students').select('id,name').eq('phone', normalized)
+    if (name) q.eq('name', normalizeName(name))
+    const { data } = await q.maybeSingle()
     student = data
   }
 

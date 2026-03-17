@@ -65,6 +65,7 @@ export default function StudentsPage() {
   const [rcTotal, setRcTotal] = useState(0)
   const [rcPage, setRcPage] = useState(1)
   const [rcSearch, setRcSearch] = useState('')
+  const [rcSearchInput, setRcSearchInput] = useState('')
   const [rcLoading, setRcLoading] = useState(false)
   const RC_PAGE_SIZE = 50
   const rcDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -364,12 +365,12 @@ export default function StudentsPage() {
           {filterMatId === null && (
             <>
               <input
-                value={rcSearch}
+                value={rcSearchInput}
                 onChange={e => {
                   const val = e.target.value
+                  setRcSearchInput(val)
                   if (rcDebounceRef.current) clearTimeout(rcDebounceRef.current)
                   rcDebounceRef.current = setTimeout(() => { setRcSearch(val); setRcPage(1) }, 300)
-                  setRcSearch(val)
                 }}
                 placeholder="이름, 수험번호, 연락처 검색..."
                 className="w-full px-4 py-2.5 border border-gray-200 text-sm mb-4 focus:outline-none focus:border-blue-900"
@@ -409,13 +410,13 @@ export default function StudentsPage() {
                             return (
                               <td key={m.id} className="px-3 py-2.5 text-center">
                                 {receivedSet.has(m.id) ? (
-                                  <div className="inline-flex items-center gap-0.5">
+                                  <div className="inline-flex items-center gap-1">
                                     <span className="inline-flex items-center justify-center w-6 h-6 bg-green-600 text-white text-xs font-bold">✓</span>
                                     <button
                                       onClick={() => undo(s.id, m.id, s.name)}
                                       disabled={returning.has(`${s.id}-${m.id}`)}
                                       title="반납"
-                                      className="w-4 h-4 flex items-center justify-center text-gray-300 hover:text-red-500 text-sm leading-none disabled:opacity-30 transition-colors"
+                                      className="w-5 h-5 flex items-center justify-center bg-red-100 text-red-500 hover:bg-red-500 hover:text-white text-xs font-bold border border-red-300 disabled:opacity-30 transition-colors"
                                     >
                                       {returning.has(`${s.id}-${m.id}`) ? '…' : '×'}
                                     </button>

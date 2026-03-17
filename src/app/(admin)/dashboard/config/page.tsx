@@ -19,7 +19,7 @@ export default function ConfigPage() {
   // ── Popup state ─────────────────────────────────────────
   const [popups, setPopups] = useState<Popup[]>([])
   const [popupFetchError, setPopupFetchError] = useState(false)
-  const [popupLoading, setPopupLoading] = useState(false)
+  const [savingPopup, setSavingPopup] = useState<Record<string, boolean>>({})
   const [popupMsg, setPopupMsg] = useState('')
 
   // ── Admin ID state ───────────────────────────────────────
@@ -66,13 +66,14 @@ export default function ConfigPage() {
   }
 
   async function savePopup(popup: Popup) {
-    setPopupLoading(true); setPopupMsg('')
+    setSavingPopup(prev => ({ ...prev, [popup.popup_key]: true }))
+    setPopupMsg('')
     const res = await fetch('/api/config/popups', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(popup),
     })
-    setPopupLoading(false)
+    setSavingPopup(prev => ({ ...prev, [popup.popup_key]: false }))
     if (res.ok) { setPopupMsg('저장되었습니다.') }
     else { const d = await res.json(); setPopupMsg(d.error ?? '저장 실패') }
     setTimeout(() => setPopupMsg(''), 3000)
@@ -185,11 +186,13 @@ export default function ConfigPage() {
               <div className="flex items-center justify-between">
                 <span className="text-sm font-semibold text-gray-700">{popup.popup_key === 'notice' ? '공지사항' : '환불규정'}</span>
                 <label className="flex items-center gap-2 cursor-pointer select-none">
-                  <span className="text-sm text-gray-500">활성</span>
+                  <span className={`text-xs font-bold px-2 py-0.5 border ${popup.is_active ? 'bg-green-50 text-green-700 border-green-300' : 'bg-gray-100 text-gray-400 border-gray-300'}`}>
+                    {popup.is_active ? '활성' : '비활성'}
+                  </span>
                   <button
                     type="button"
                     onClick={() => updatePopup(popup.popup_key, 'is_active', !popup.is_active)}
-                    className={`relative w-10 h-6 border transition-colors ${popup.is_active ? 'bg-blue-600 border-blue-600' : 'bg-gray-200 border-gray-300'}`}
+                    className={`relative w-10 h-6 border transition-colors ${popup.is_active ? 'bg-green-500 border-green-500' : 'bg-gray-200 border-gray-300'}`}
                   >
                     <span className={`absolute top-1 w-4 h-4 bg-white transition-transform ${popup.is_active ? 'translate-x-5' : 'translate-x-1'}`} />
                   </button>
@@ -211,11 +214,11 @@ export default function ConfigPage() {
               />
               <button
                 onClick={() => savePopup(popup)}
-                disabled={popupLoading}
+                disabled={savingPopup[popup.popup_key]}
                 className={btnPrimary}
                 style={{ background: 'var(--theme)' }}
               >
-                저장
+                {savingPopup[popup.popup_key] ? '저장 중...' : '저장'}
               </button>
             </div>
           ))}
