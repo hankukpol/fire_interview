@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 
-type ScanState = 'idle' | 'scanning' | 'processing' | 'selecting' | 'success' | 'error'
+type ScanState = 'idle' | 'scanning' | 'processing' | 'selecting'
 type TabMode = 'qr' | 'quick'
 
 interface ScanResult {
@@ -12,9 +12,14 @@ interface ScanResult {
   studentName?: string
   examNumber?: string
   series?: string
-  distributedAt?: string
   needsSelection?: boolean
   unreceived?: { id: number; name: string }[]
+}
+
+interface ResultOverlay {
+  success: boolean
+  title: string
+  studentName?: string
 }
 
 interface Material { id: number; name: string; is_active: boolean }
@@ -22,11 +27,14 @@ interface Material { id: number; name: string; is_active: boolean }
 export default function ScanPage() {
   const [tab, setTab] = useState<TabMode>('qr')
   const [state, setState] = useState<ScanState>('idle')
-  const [result, setResult] = useState<ScanResult | null>(null)
+  const [selectResult, setSelectResult] = useState<ScanResult | null>(null)
+  const [overlay, setOverlay] = useState<ResultOverlay | null>(null)
   const [lastStudentName, setLastStudentName] = useState('')
   const scannerRef = useRef<unknown>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const pendingTokenRef = useRef<string>('')
+  const isProcessingRef = useRef(false)
+  const overlayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // 빠른 배부
   const [materials, setMaterials] = useState<Material[]>([])
@@ -41,20 +49,16 @@ export default function ScanPage() {
       setMaterials(active)
       if (active.length > 0) setQuickMatId(active[0].id)
     })
+    startScanner()
     return () => { stopScanner() }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  useEffect(() => {
-    if (state === 'success' || state === 'error') {
-      const t = setTimeout(() => { setResult(null); setState('idle') }, state === 'success' ? 3000 : 5000)
-      return () => clearTimeout(t)
-    }
-  }, [state])
-
   async function startScanner() {
     if (typeof window === 'undefined') return
+    if (scannerRef.current) return
     setState('scanning')
+    isProcessingRef.current = false
     try {
       const { Html5Qrcode } = await import('html5-qrcode')
       const scanner = new Html5Qrcode('qr-reader')
@@ -64,37 +68,67 @@ export default function ScanPage() {
       await scanner.start(
         { facingMode: 'environment' },
         { fps: 10, qrbox: { width: boxSize, height: boxSize } },
-        async (decodedText: string) => { await handleScan(decodedText, scanner) },
+        async (decodedText: string) => { await handleScan(decodedText) },
         undefined,
       )
     } catch {
-      setState('error')
-      setResult({ success: false, reason: '카메라 접근 권한이 필요합니다.' })
+      setState('idle')
+      showOverlay({ success: false, title: '카메라 권한이 필요합니다. 브라우저 설정에서 허용해 주세요.' }, 5000)
     }
   }
 
   async function stopScanner() {
+    if (overlayTimerRef.current) { clearTimeout(overlayTimerRef.current); overlayTimerRef.current = null }
     if (scannerRef.current) {
       try { await (scannerRef.current as { stop: () => Promise<void> }).stop() } catch { /* ignore */ }
       scannerRef.current = null
     }
+    isProcessingRef.current = false
   }
 
-  async function handleScan(decodedText: string, scanner: { stop: () => Promise<void> }) {
+  function showOverlay(o: ResultOverlay, durationMs = 2500) {
+    if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current)
+    setOverlay(o)
+    overlayTimerRef.current = setTimeout(() => {
+      setOverlay(null)
+      isProcessingRef.current = false // 오버레이 종료 후 다음 스캔 허용
+    }, durationMs)
+  }
+
+  async function handleScan(decodedText: string) {
+    if (isProcessingRef.current) return // 처리 중이면 무시 (연속 인식 방지)
+    isProcessingRef.current = true
     setState('processing')
-    await scanner.stop()
-    scannerRef.current = null
+
     let token = decodedText
     try { const url = new URL(decodedText); token = url.searchParams.get('token') ?? decodedText } catch { /* not URL */ }
     pendingTokenRef.current = token
-    const res = await fetch('/api/distribution/scan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) })
+
+    const res = await fetch('/api/distribution/scan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token }),
+    })
     const data: ScanResult = await res.json()
-    setResult(data)
     if (data.studentName) setLastStudentName(data.studentName)
+
     if (data.needsSelection) {
+      setSelectResult(data)
       setState('selecting')
+      return // isProcessingRef stays true until selection is made
+    }
+
+    setState('scanning') // 카메라 계속 켜진 상태로 복귀
+
+    if (data.success) {
+      showOverlay({ success: true, title: `✓  ${data.materialName} 배부 완료`, studentName: data.studentName })
     } else {
-      setState(data.success ? 'success' : 'error')
+      let title = '처리 실패'
+      if (data.reason === 'ALREADY_RECEIVED') title = '이미 수령한 자료입니다'
+      else if (data.reason === 'ALL_RECEIVED') title = '모든 자료를 수령했습니다'
+      else if (data.reason === 'INVALID_TOKEN') title = '유효하지 않은 QR 코드'
+      else if (data.reason) title = data.reason
+      showOverlay({ success: false, title, studentName: data.studentName }, 3000)
     }
   }
 
@@ -107,8 +141,15 @@ export default function ScanPage() {
       body: JSON.stringify({ token, material_id: materialId }),
     })
     const data: ScanResult = await res.json()
-    setResult(data)
-    setState(data.success ? 'success' : 'error')
+    if (data.studentName) setLastStudentName(data.studentName)
+    setSelectResult(null)
+    setState('scanning')
+
+    if (data.success) {
+      showOverlay({ success: true, title: `✓  ${data.materialName} 배부 완료`, studentName: data.studentName })
+    } else {
+      showOverlay({ success: false, title: '처리 실패' })
+    }
   }
 
   async function handleQuickDistribute() {
@@ -131,28 +172,19 @@ export default function ScanPage() {
     setTimeout(() => setQuickMsg(null), 4000)
   }
 
-  const bgColors: Record<ScanState, string> = {
-    idle: '#F0F2F8', scanning: '#F0F2F8', processing: '#F0F2F8', selecting: '#F0F2F8', success: '#E8F5E9', error: '#FFF3E0',
-  }
-
-  const resultTitle = () => {
-    if (!result) return ''
-    if (result.success) return `${result.materialName} 배부 완료`
-    if (result.reason === 'ALREADY_RECEIVED') return '이미 수령한 자료입니다'
-    if (result.reason === 'ALL_RECEIVED') return '모든 자료를 수령했습니다'
-    if (result.reason === 'INVALID_TOKEN') return '유효하지 않은 QR 코드'
-    return result.reason ?? '처리 실패'
-  }
-
   return (
-    <div className="flex flex-col items-center min-h-dvh px-5 py-6 transition-colors duration-300" style={{ background: tab === 'quick' ? '#F9FAFB' : bgColors[state] }}>
+    <div className="flex flex-col items-center min-h-dvh px-5 py-6" style={{ background: tab === 'quick' ? '#F9FAFB' : '#F0F2F8' }}>
 
       {/* 탭 */}
-      <div className="flex w-full max-w-sm mb-6 border border-gray-200 overflow-hidden">
+      <div className="flex w-full max-w-sm mb-5 border border-gray-200 overflow-hidden">
         {(['qr', 'quick'] as TabMode[]).map(t => (
           <button
             key={t}
-            onClick={() => { setTab(t); if (t === 'qr' && state !== 'idle') { stopScanner(); setState('idle') } }}
+            onClick={() => {
+              setTab(t)
+              if (t === 'quick') { stopScanner(); setState('idle'); setSelectResult(null); setOverlay(null) }
+              if (t === 'qr') { startScanner() }
+            }}
             className="flex-1 py-2.5 text-sm font-medium transition-colors"
             style={tab === t ? { background: 'var(--theme)', color: '#fff' } : { background: '#fff', color: '#6b7280' }}
           >
@@ -164,85 +196,83 @@ export default function ScanPage() {
       {/* ── QR 스캔 탭 ── */}
       {tab === 'qr' && (
         <>
-          {(state === 'idle' || state === 'scanning') && (
-            <>
-              <div className="text-6xl mb-4">📷</div>
-              <h1 className="text-2xl font-bold mb-2" style={{ color: 'var(--theme)' }}>스캔 대기 중</h1>
-              {lastStudentName && (
-                <div className="bg-white border border-gray-100 px-4 py-3 text-sm text-center mb-6 w-full max-w-sm">
-                  <span className="text-gray-500">마지막 처리:</span>{' '}
-                  <span className="font-semibold text-green-700">{lastStudentName}</span>
-                </div>
-              )}
-              <p className="text-sm text-gray-500 mb-8 text-center">카메라로 학생의 QR 코드를 스캔해 주세요</p>
-              <div id="qr-reader" ref={containerRef} className="w-full max-w-sm overflow-hidden mb-6 transition-all duration-300" style={{ minHeight: state === 'scanning' ? 300 : 4 }} />
-              {state === 'idle' && (
-                <button onClick={startScanner} className="w-full max-w-sm py-4 text-white font-bold text-lg" style={{ background: 'var(--theme)' }}>
-                  QR 스캔 시작
-                </button>
-              )}
-              {state === 'scanning' && (
-                <button onClick={() => { stopScanner(); setState('idle') }} className="w-full max-w-sm py-4 bg-gray-200 text-gray-600 font-medium">
-                  스캔 취소
-                </button>
-              )}
-            </>
+          {/* 마지막 처리 학생 */}
+          {lastStudentName && (
+            <div className="bg-white border border-gray-100 px-4 py-2.5 text-sm text-center mb-4 w-full max-w-sm">
+              <span className="text-gray-400">마지막 처리:</span>{' '}
+              <span className="font-semibold text-green-700">{lastStudentName}</span>
+            </div>
           )}
 
-          {state === 'processing' && (
-            <>
-              <div className="w-16 h-16 border-4 border-blue-900 border-t-transparent rounded-full animate-spin mb-6 mt-12" />
-              <p className="text-lg font-medium text-gray-700">처리 중...</p>
-            </>
-          )}
+          {/* 카메라 뷰 (항상 유지) */}
+          <div className="relative w-full max-w-sm overflow-hidden mb-4">
+            <div
+              id="qr-reader"
+              ref={containerRef}
+              className="w-full"
+              style={{ minHeight: state !== 'idle' ? 300 : 4 }}
+            />
 
-          {/* ── 자료 선택 화면 ── */}
-          {state === 'selecting' && result && (
-            <>
-              <div className="w-full max-w-sm mb-5">
-                <div className="bg-white border border-gray-100 p-4 mb-4">
-                  {result.studentName && <div className="flex justify-between py-2 border-b border-gray-50"><span className="text-sm text-gray-500">이름</span><span className="text-sm font-semibold">{result.studentName}</span></div>}
-                  {result.examNumber && <div className="flex justify-between py-2 border-b border-gray-50"><span className="text-sm text-gray-500">수험번호</span><span className="text-sm font-semibold">{result.examNumber}</span></div>}
-                  {result.series && <div className="flex justify-between py-2"><span className="text-sm text-gray-500">직렬</span><span className="text-sm font-semibold">{result.series}</span></div>}
-                </div>
-                <p className="text-sm font-semibold text-gray-700 mb-3">배부할 자료를 선택하세요</p>
-                <div className="flex flex-col gap-2">
-                  {(result.unreceived ?? []).map(m => (
-                    <button
-                      key={m.id}
-                      onClick={() => handleSelectMaterial(m.id)}
-                      className="w-full py-3 text-white font-bold text-base"
-                      style={{ background: 'var(--theme)' }}
-                    >
-                      {m.name}
-                    </button>
-                  ))}
-                </div>
+            {/* 처리 중 오버레이 */}
+            {state === 'processing' && (
+              <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                <div className="w-14 h-14 border-4 border-white border-t-transparent rounded-full animate-spin" />
               </div>
-              <button onClick={() => { setResult(null); setState('idle') }} className="w-full max-w-sm py-3 bg-gray-200 text-gray-600 font-medium text-sm">
+            )}
+
+            {/* 결과 오버레이 (카메라 위에 표시) */}
+            {overlay && state !== 'processing' && (
+              <div
+                className="absolute inset-0 flex flex-col items-center justify-center px-4"
+                style={{ background: overlay.success ? 'rgba(27,94,32,0.92)' : 'rgba(183,28,28,0.92)' }}
+              >
+                <p className="text-white text-xl font-bold text-center mb-1">{overlay.title}</p>
+                {overlay.studentName && (
+                  <p className="text-white/80 text-sm">{overlay.studentName}</p>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* 자료 선택 화면 */}
+          {state === 'selecting' && selectResult && (
+            <div className="w-full max-w-sm">
+              <div className="bg-white border border-gray-100 p-4 mb-3">
+                {selectResult.studentName && <div className="flex justify-between py-2 border-b border-gray-50"><span className="text-sm text-gray-500">이름</span><span className="text-sm font-semibold">{selectResult.studentName}</span></div>}
+                {selectResult.examNumber && <div className="flex justify-between py-2 border-b border-gray-50"><span className="text-sm text-gray-500">수험번호</span><span className="text-sm font-semibold">{selectResult.examNumber}</span></div>}
+                {selectResult.series && <div className="flex justify-between py-2"><span className="text-sm text-gray-500">직렬</span><span className="text-sm font-semibold">{selectResult.series}</span></div>}
+              </div>
+              <p className="text-sm font-semibold text-gray-700 mb-2">배부할 자료를 선택하세요</p>
+              <div className="flex flex-col gap-2">
+                {(selectResult.unreceived ?? []).map(m => (
+                  <button
+                    key={m.id}
+                    onClick={() => handleSelectMaterial(m.id)}
+                    className="w-full py-3 text-white font-bold text-base"
+                    style={{ background: 'var(--theme)' }}
+                  >
+                    {m.name}
+                  </button>
+                ))}
+              </div>
+              <button
+                onClick={() => { setSelectResult(null); setState('scanning'); isProcessingRef.current = false }}
+                className="w-full mt-2 py-3 bg-gray-200 text-gray-600 font-medium text-sm"
+              >
                 취소
               </button>
-            </>
+            </div>
           )}
 
-          {(state === 'success' || state === 'error') && result && (
-            <>
-              <div className="w-20 h-20 flex items-center justify-center text-white text-4xl font-bold mb-5 mt-6" style={{ background: result.success ? '#2E7D32' : '#EF6C00' }}>
-                {result.success ? '✓' : '!'}
-              </div>
-              <h2 className="text-xl font-bold text-center mb-5 text-gray-900">{resultTitle()}</h2>
-              {(result.studentName || result.materialName) && (
-                <div className="bg-white border border-gray-100 p-4 w-full max-w-sm mb-6">
-                  {result.studentName && <div className="flex justify-between py-2 border-b border-gray-50"><span className="text-sm text-gray-500">이름</span><span className="text-sm font-semibold">{result.studentName}</span></div>}
-                  {result.examNumber && <div className="flex justify-between py-2 border-b border-gray-50"><span className="text-sm text-gray-500">수험번호</span><span className="text-sm font-semibold">{result.examNumber}</span></div>}
-                  {result.series && <div className="flex justify-between py-2 border-b border-gray-50"><span className="text-sm text-gray-500">직렬</span><span className="text-sm font-semibold">{result.series}</span></div>}
-                  {result.success && result.materialName && <div className="flex justify-between py-2"><span className="text-sm text-gray-500">배부 자료</span><span className="text-sm font-semibold text-green-700">{result.materialName}</span></div>}
-                </div>
-              )}
-              <button onClick={() => { setResult(null); startScanner() }} className="w-full max-w-sm py-4 text-white font-bold text-base" style={{ background: result.success ? '#2E7D32' : '#EF6C00' }}>
-                다음 학생 스캔하기
-              </button>
-            </>
+          {/* 카메라 시작 실패 시 수동 버튼 */}
+          {state === 'idle' && (
+            <button onClick={startScanner} className="w-full max-w-sm py-4 text-white font-bold text-lg" style={{ background: 'var(--theme)' }}>
+              QR 스캔 시작
+            </button>
+          )}
+
+          {state === 'scanning' && !overlay && !selectResult && (
+            <p className="text-sm text-gray-500 text-center">카메라로 학생의 QR 코드를 스캔해 주세요</p>
           )}
         </>
       )}

@@ -1,24 +1,39 @@
-'use client'
+import { createServerClient } from '@/lib/supabase/server'
+import { unstable_cache } from 'next/cache'
 
-import { useEffect } from 'react'
+const getThemeConfig = unstable_cache(
+  async () => {
+    const db = createServerClient()
+    const { data } = await db
+      .from('app_config')
+      .select('config_key, config_value')
+      .in('config_key', ['app_name', 'theme_color'])
+    const map: Record<string, string> = {}
+    for (const row of data ?? []) {
+      map[row.config_key] = (row.config_value as string).replace(/^"|"$/g, '')
+    }
+    return {
+      app_name: map['app_name'] ?? '최준 면접 모바일 접수증',
+      theme_color: map['theme_color'] ?? '#1a237e',
+    }
+  },
+  ['app-config'],
+  { tags: ['app-config'], revalidate: 600 },
+)
 
-export default function StudentLayout({ children }: { children: React.ReactNode }) {
-  useEffect(() => {
-    fetch('/api/config/app')
-      .then(r => r.json())
-      .then((cfg: { app_name?: string; theme_color?: string }) => {
-        if (cfg.theme_color) {
-          document.documentElement.style.setProperty('--theme', cfg.theme_color)
-        }
-        if (cfg.app_name) {
-          document.title = cfg.app_name
-        }
-      })
-      .catch(() => {})
-  }, [])
+export async function generateMetadata() {
+  const cfg = await getThemeConfig()
+  return { title: cfg.app_name }
+}
+
+export default async function StudentLayout({ children }: { children: React.ReactNode }) {
+  const cfg = await getThemeConfig()
 
   return (
-    <main className="min-h-dvh bg-white">
+    <main
+      className="min-h-dvh bg-white"
+      style={{ '--theme': cfg.theme_color } as React.CSSProperties}
+    >
       <div className="w-full max-w-none mx-auto md:max-w-[768px] md:mx-auto">
         {children}
       </div>
