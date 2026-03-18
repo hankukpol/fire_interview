@@ -23,6 +23,8 @@ interface ResultOverlay {
 }
 
 interface Material { id: number; name: string; is_active: boolean }
+interface CameraOption { id: string; label: string }
+type ScannerInstance = { stop: () => Promise<void>; clear: () => void }
 
 export default function ScanPage() {
   const [tab, setTab] = useState<TabMode>('qr')
@@ -30,10 +32,11 @@ export default function ScanPage() {
   const [selectResult, setSelectResult] = useState<ScanResult | null>(null)
   const [overlay, setOverlay] = useState<ResultOverlay | null>(null)
   const [lastStudentName, setLastStudentName] = useState('')
-  const scannerRef = useRef<unknown>(null)
+  const scannerRef = useRef<ScannerInstance | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const pendingTokenRef = useRef<string>('')
   const isProcessingRef = useRef(false)
+  const isStartingRef = useRef(false)
   const overlayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // 빠른 배부
@@ -49,45 +52,162 @@ export default function ScanPage() {
       setMaterials(active)
       if (active.length > 0) setQuickMatId(active[0].id)
     })
-    startScanner()
-    return () => { stopScanner() }
+    // rAF으로 레이아웃 완성 후 시작 (offsetWidth가 0으로 읽히는 문제 방지)
+    const rafId = requestAnimationFrame(() => startScanner())
+    return () => { cancelAnimationFrame(rafId); stopScanner() }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  function clearScannerContainer() {
+    const qrEl = document.getElementById('qr-reader')
+    if (qrEl) qrEl.innerHTML = ''
+  }
+
+  async function requestCameraPermission() {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: {
+        facingMode: { ideal: 'environment' },
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+      },
+    })
+    stream.getTracks().forEach(track => track.stop())
+  }
+
+  function getPreferredCamera(cameras: CameraOption[]) {
+    return cameras.find(camera => /back|rear|environment/i.test(camera.label))
+      ?? cameras[cameras.length - 1]
+  }
+
+  function optimizeScannerVideo() {
+    const video = document.querySelector('#qr-reader video') as HTMLVideoElement | null
+    if (!video) return
+    video.muted = true
+    video.setAttribute('muted', 'true')
+    video.setAttribute('autoplay', 'true')
+    video.setAttribute('playsinline', 'true')
+    void video.play().catch(() => {})
+  }
+
+  function getCameraErrorMessage(error: unknown) {
+    const message = typeof error === 'string'
+      ? error
+      : error instanceof Error
+        ? error.message
+        : ''
+
+    if (error instanceof DOMException) {
+      if (error.name === 'NotAllowedError') {
+        return '카메라 권한이 차단되었습니다. 브라우저 설정에서 카메라를 허용해 주세요.'
+      }
+      if (error.name === 'NotFoundError' || error.name === 'OverconstrainedError') {
+        return '사용 가능한 카메라를 찾지 못했습니다. 다른 브라우저나 기기에서 다시 시도해 주세요.'
+      }
+      if (error.name === 'NotReadableError') {
+        return '카메라가 다른 앱에서 사용 중입니다. 카메라 앱을 종료한 뒤 다시 시도해 주세요.'
+      }
+    }
+
+    if (message.includes('Permission denied') || message.includes('NotAllowedError')) {
+      return '카메라 권한이 필요합니다. 브라우저 설정에서 허용해 주세요.'
+    }
+    if (message.includes('Requested device not found') || message.includes('NotFoundError') || message.includes('no-camera')) {
+      return '사용 가능한 카메라를 찾지 못했습니다.'
+    }
+    if (message.includes('NotReadableError')) {
+      return '카메라가 이미 사용 중입니다. 다른 앱을 종료한 뒤 다시 시도해 주세요.'
+    }
+
+    return '카메라를 시작할 수 없습니다. 페이지를 새로고침한 뒤 다시 시도해 주세요.'
+  }
 
   async function startScanner() {
     if (typeof window === 'undefined') return
     if (scannerRef.current) return
+    if (isStartingRef.current) return
+    if (!window.isSecureContext) {
+      setState('idle')
+      showOverlay({ success: false, title: '카메라 스캔은 HTTPS 또는 localhost에서만 사용할 수 있습니다.' }, 5000)
+      return
+    }
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setState('idle')
+      showOverlay({ success: false, title: '이 브라우저는 카메라 접근을 지원하지 않습니다.' }, 5000)
+      return
+    }
+    isStartingRef.current = true
     setState('scanning')
     isProcessingRef.current = false
     try {
-      const { Html5Qrcode } = await import('html5-qrcode')
-      const scanner = new Html5Qrcode('qr-reader')
+      const { Html5Qrcode, Html5QrcodeSupportedFormats } = await import('html5-qrcode')
+      await requestCameraPermission()
       const containerWidth = containerRef.current?.offsetWidth ?? 300
-      const boxSize = Math.min(250, containerWidth - 40)
-      await scanner.start(
-        { facingMode: 'environment' },
-        { fps: 10, qrbox: { width: boxSize, height: boxSize } },
-        async (decodedText: string) => { await handleScan(decodedText) },
-        undefined,
-      )
-      scannerRef.current = scanner // start 성공 후에만 세팅
-    } catch {
-      // html5-qrcode가 DOM에 주입한 요소 정리 (플래시 현상 방지)
-      const el = document.getElementById('qr-reader')
-      if (el) el.innerHTML = ''
-      scannerRef.current = null // 실패 시 반드시 초기화
+      const boxSize = Math.max(150, Math.min(250, containerWidth - 40))
+      const config = { fps: 10, qrbox: { width: boxSize, height: boxSize }, aspectRatio: 1 }
+      const cb = async (text: string) => { await handleScan(text) }
+      const createScanner = () => new Html5Qrcode('qr-reader', {
+        verbose: false,
+        formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
+      })
+      const cameras = await Html5Qrcode.getCameras()
+      const preferredCamera = cameras.length > 0 ? getPreferredCamera(cameras) : null
+      const targets: Array<string | { facingMode: 'environment' | { exact: 'environment' } }> = []
+
+      if (preferredCamera?.id) targets.push(preferredCamera.id)
+      targets.push({ facingMode: { exact: 'environment' } })
+      targets.push({ facingMode: 'environment' })
+      if (cameras[0]?.id && cameras[0].id !== preferredCamera?.id) {
+        targets.push(cameras[0].id)
+      }
+
+      let lastError: unknown = null
+      for (const target of targets) {
+        clearScannerContainer()
+        const scanner = createScanner()
+        try {
+          await scanner.start(target, config, cb, undefined)
+          scannerRef.current = scanner
+          optimizeScannerVideo()
+          return
+        } catch (error) {
+          lastError = error
+          try { await scanner.stop() } catch { /* ignore */ }
+          try { scanner.clear() } catch { /* ignore */ }
+        }
+      }
+
+      if (!targets.length) {
+        clearScannerContainer()
+        const scanner = createScanner()
+        await scanner.start({ facingMode: 'environment' }, config, cb, undefined)
+        scannerRef.current = scanner
+        optimizeScannerVideo()
+        return
+      }
+
+      throw lastError ?? new Error('camera-start-failed')
+    } catch (error) {
+      clearScannerContainer()
+      scannerRef.current = null
       setState('idle')
-      showOverlay({ success: false, title: '카메라 권한이 필요합니다. 브라우저 설정에서 허용해 주세요.' }, 5000)
+      showOverlay({ success: false, title: getCameraErrorMessage(error) }, 5000)
+    } finally {
+      isStartingRef.current = false
     }
   }
 
   async function stopScanner() {
     if (overlayTimerRef.current) { clearTimeout(overlayTimerRef.current); overlayTimerRef.current = null }
-    if (scannerRef.current) {
-      try { await (scannerRef.current as { stop: () => Promise<void> }).stop() } catch { /* ignore */ }
-      scannerRef.current = null
-    }
+    const scanner = scannerRef.current
+    scannerRef.current = null // 동기적으로 먼저 null 처리 (race condition 방지)
+    isStartingRef.current = false
     isProcessingRef.current = false
+    if (scanner) {
+      try { await (scanner as { stop: () => Promise<void> }).stop() } catch { /* ignore */ }
+      try { scanner.clear() } catch { /* ignore */ }
+    }
+    clearScannerContainer()
   }
 
   function showOverlay(o: ResultOverlay, durationMs = 2500) {
@@ -196,9 +316,14 @@ export default function ScanPage() {
           <button
             key={t}
             onClick={async () => {
-              setTab(t)
-              if (t === 'quick') { await stopScanner(); setState('idle'); setSelectResult(null); setOverlay(null) }
-              if (t === 'qr') { startScanner() }
+              if (t === 'quick') {
+                await stopScanner()      // 카메라 먼저 정지 (#qr-reader DOM 제거 전)
+                setTab(t)               // 그 다음 탭 변경
+                setState('idle'); setSelectResult(null); setOverlay(null)
+              } else {
+                setTab(t)               // 탭 변경 (#qr-reader DOM 추가)
+                requestAnimationFrame(() => startScanner()) // rAF: DOM 반영 후 카메라 시작
+              }
             }}
             className="flex-1 py-2.5 text-sm font-medium transition-colors"
             style={tab === t ? { background: 'var(--theme)', color: '#fff' } : { background: '#fff', color: '#6b7280' }}
