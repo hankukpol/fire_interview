@@ -27,7 +27,9 @@ export async function middleware(req: NextRequest) {
   const isPublicApiRoute =
     pathname === '/api/students/lookup' ||
     /^\/api\/students\/[^/]+\/receipts$/.test(pathname) ||
-    (pathname.startsWith('/api/materials') && req.method === 'GET')
+    (pathname === '/api/materials' &&
+      req.method === 'GET' &&
+      req.nextUrl.searchParams.get('all') !== '1')
 
   // 관리자 보호 경로 (GET /api/config/popups 는 학생도 접근 가능하므로 제외)
   const isAdminPath =

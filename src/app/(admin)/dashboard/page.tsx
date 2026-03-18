@@ -19,16 +19,21 @@ async function getStats() {
   ] = await Promise.all([
     db.from('students').select('*', { count: 'exact', head: true }),
     db.from('distribution_logs').select('*', { count: 'exact', head: true }),
-    db.from('distribution_logs').select('*', { count: 'exact', head: true }).gte('distributed_at', `${today}T00:00:00`),
+    db.from('distribution_logs').select('*', { count: 'exact', head: true }).gte('distributed_at', `${today}T00:00:00+09:00`),
     db.from('materials').select('id,name,is_active').order('sort_order'),
     db.from('distribution_logs').select('material_id, student_id'),
-    db.from('distribution_logs').select('distributed_at').gte('distributed_at', `${today}T00:00:00`),
+    db.from('distribution_logs').select('distributed_at').gte('distributed_at', `${today}T00:00:00+09:00`),
   ])
 
   // 자료별 누적 수령 인원 집계
-  const matCountMap: Record<number, number> = {}
+  const materialStudentMap: Record<number, Set<string>> = {}
   for (const row of allDistLogs ?? []) {
-    matCountMap[row.material_id] = (matCountMap[row.material_id] ?? 0) + 1
+    if (!materialStudentMap[row.material_id]) materialStudentMap[row.material_id] = new Set()
+    materialStudentMap[row.material_id].add(row.student_id)
+  }
+  const matCountMap: Record<number, number> = {}
+  for (const [materialId, students] of Object.entries(materialStudentMap)) {
+    matCountMap[Number(materialId)] = students.size
   }
 
   // 전체 수령 완료 학생 수 (모든 활성 자료 수령한 학생)
@@ -44,10 +49,10 @@ async function getStats() {
     ? Object.values(studentReceivedMap).filter(s => activeMaterialIds.every(id => s.has(id))).length
     : 0
 
-  // 시간대별 배부 집계
+  // 시간대별 배부 집계 (KST 기준)
   const hourMap: Record<number, number> = {}
   for (const log of todayLogsDetailed ?? []) {
-    const hour = new Date(log.distributed_at).getHours()
+    const hour = Number(new Date(log.distributed_at).toLocaleString('en-US', { timeZone: 'Asia/Seoul', hour: 'numeric', hour12: false }))
     hourMap[hour] = (hourMap[hour] ?? 0) + 1
   }
 

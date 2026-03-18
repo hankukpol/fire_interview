@@ -4,6 +4,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { generateQrToken } from '@/lib/qr/token'
 import { normalizePhone, normalizeName } from '@/lib/utils'
 import { unstable_cache } from 'next/cache'
+import { checkRateLimit, getClientIp } from '@/lib/auth/rateLimiter'
 
 const schema = z.object({
   name: z.string().min(1),
@@ -26,6 +27,16 @@ const getStudentByNamePhone = unstable_cache(
 )
 
 export async function POST(req: NextRequest) {
+  const ip = getClientIp(req)
+  const rl = checkRateLimit(`lookup:${ip}`)
+  if (!rl.allowed) {
+    const retryAfterSec = Math.ceil(rl.retryAfterMs / 1000)
+    return NextResponse.json(
+      { error: `요청이 너무 많습니다. ${retryAfterSec}초 후 다시 시도해 주세요.` },
+      { status: 429, headers: { 'Retry-After': String(retryAfterSec) } }
+    )
+  }
+
   const body = await req.json().catch(() => null)
   const parsed = schema.safeParse(body)
   if (!parsed.success) {

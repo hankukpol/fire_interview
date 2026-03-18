@@ -34,12 +34,19 @@ export default function ReceiptPage() {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const prevReceiptsRef = useRef<Record<number, string>>({})
   const studentIdRef = useRef<string>('')
+  const isPollingRef = useRef(false)
 
   const fetchReceipts = useCallback(async () => {
-    if (!studentIdRef.current) return
-    const res = await fetch(`/api/students/${studentIdRef.current}/receipts`)
-    if (!res.ok) return
-    const rec = await res.json()
+    if (!studentIdRef.current || isPollingRef.current) return
+    isPollingRef.current = true
+    let rec: { receipts?: Record<number, string> } = {}
+    try {
+      const res = await fetch(`/api/students/${studentIdRef.current}/receipts`)
+      if (!res.ok) return
+      rec = await res.json()
+    } finally {
+      isPollingRef.current = false
+    }
     const newReceipts: Record<number, string> = rec.receipts ?? {}
 
     // 새로 수령된 항목 감지

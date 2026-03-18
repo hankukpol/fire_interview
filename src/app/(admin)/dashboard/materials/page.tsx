@@ -6,10 +6,12 @@ import type { Material } from '@/types/database'
 export default function MaterialsPage() {
   const [materials, setMaterials] = useState<Material[]>([])
   const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({ name: '', description: '', is_active: true, sort_order: 0 })
   const [editTarget, setEditTarget] = useState<Material | null>(null)
   const [editForm, setEditForm] = useState({ name: '', description: '', sort_order: 0 })
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null)
 
   async function load() {
     setLoading(true)
@@ -31,11 +33,14 @@ export default function MaterialsPage() {
   }
 
   async function handleAdd() {
+    if (saving) return
+    setSaving(true)
     const res = await fetch('/api/materials', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(form),
     })
+    setSaving(false)
     if (res.ok) { setShowForm(false); setForm({ name: '', description: '', is_active: true, sort_order: 0 }); load() }
     else { const d = await res.json(); alert(d.error ?? '추가 실패') }
   }
@@ -46,21 +51,22 @@ export default function MaterialsPage() {
   }
 
   async function handleEdit() {
-    if (!editTarget) return
+    if (!editTarget || saving) return
+    setSaving(true)
     const res = await fetch(`/api/materials/${editTarget.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(editForm),
     })
+    setSaving(false)
     if (res.ok) { setEditTarget(null); load() }
     else { const d = await res.json(); alert(d.error ?? '수정 실패') }
   }
 
   async function handleDelete(id: number) {
-    if (!confirm('자료를 삭제하면 배부 기록도 영향을 받을 수 있습니다. 계속하시겠습니까?')) return
     const res = await fetch(`/api/materials/${id}`, { method: 'DELETE' })
-    if (res.ok) load()
-    else alert('삭제 실패')
+    if (res.ok) { setConfirmDeleteId(null); load() }
+    else { setConfirmDeleteId(null); alert('삭제 실패') }
   }
 
   return (
@@ -96,7 +102,15 @@ export default function MaterialsPage() {
                   {m.is_active ? '활성' : '비활성'}
                 </button>
                 <button onClick={() => openEdit(m)} className="text-xs text-blue-500 hover:text-blue-700 shrink-0">수정</button>
-                <button onClick={() => handleDelete(m.id)} className="text-xs text-red-400 hover:text-red-600 shrink-0">삭제</button>
+                {confirmDeleteId === m.id ? (
+                  <span className="inline-flex items-center gap-1 shrink-0">
+                    <button onClick={() => handleDelete(m.id)} className="text-xs text-red-600 font-semibold hover:underline">확인</button>
+                    <span className="text-gray-300">|</span>
+                    <button onClick={() => setConfirmDeleteId(null)} className="text-xs text-gray-400 hover:underline">취소</button>
+                  </span>
+                ) : (
+                  <button onClick={() => setConfirmDeleteId(m.id)} className="text-xs text-red-400 hover:text-red-600 shrink-0">삭제</button>
+                )}
               </li>
             ))}
           </ul>
@@ -126,8 +140,8 @@ export default function MaterialsPage() {
               </div>
             </div>
             <div className="flex gap-3 mt-5">
-              <button onClick={() => setEditTarget(null)} className="flex-1 py-2.5 border border-gray-300 text-sm text-gray-600">취소</button>
-              <button onClick={handleEdit} className="flex-1 py-2.5 text-sm text-white font-medium" style={{ background: 'var(--theme)' }}>저장</button>
+              <button onClick={() => setEditTarget(null)} disabled={saving} className="flex-1 py-2.5 border border-gray-300 text-sm text-gray-600 disabled:opacity-50">취소</button>
+              <button onClick={handleEdit} disabled={saving} className="flex-1 py-2.5 text-sm text-white font-medium disabled:opacity-50" style={{ background: 'var(--theme)' }}>{saving ? '저장 중...' : '저장'}</button>
             </div>
           </div>
         </div>
@@ -155,8 +169,8 @@ export default function MaterialsPage() {
               </div>
             </div>
             <div className="flex gap-3 mt-5">
-              <button onClick={() => setShowForm(false)} className="flex-1 py-2.5 border border-gray-300 text-sm text-gray-600">취소</button>
-              <button onClick={handleAdd} className="flex-1 py-2.5 text-sm text-white font-medium" style={{ background: 'var(--theme)' }}>추가</button>
+              <button onClick={() => setShowForm(false)} disabled={saving} className="flex-1 py-2.5 border border-gray-300 text-sm text-gray-600 disabled:opacity-50">취소</button>
+              <button onClick={handleAdd} disabled={saving} className="flex-1 py-2.5 text-sm text-white font-medium disabled:opacity-50" style={{ background: 'var(--theme)' }}>{saving ? '추가 중...' : '추가'}</button>
             </div>
           </div>
         </div>

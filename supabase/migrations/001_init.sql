@@ -40,8 +40,8 @@ CREATE TABLE distribution_logs (
   distributed_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   distributed_by  TEXT DEFAULT '',
   note            TEXT DEFAULT '',
-  CONSTRAINT distribution_logs_once_per_day
-    UNIQUE (student_id, material_id, (distributed_at::DATE))
+  CONSTRAINT distribution_logs_once_per_material
+    UNIQUE (student_id, material_id)
 );
 
 CREATE INDEX idx_distlogs_student_id     ON distribution_logs (student_id);
@@ -124,11 +124,10 @@ BEGIN
     SELECT 1 FROM distribution_logs
     WHERE student_id  = p_student_id
       AND material_id = p_material_id
-      AND distributed_at::DATE = CURRENT_DATE AT TIME ZONE 'Asia/Seoul'
   ) INTO v_already;
 
   IF v_already THEN
-    RETURN jsonb_build_object('success', false, 'reason', 'already_distributed_today');
+    RETURN jsonb_build_object('success', false, 'reason', 'already_distributed');
   END IF;
 
   -- 배부 기록 삽입

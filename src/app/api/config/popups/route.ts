@@ -1,24 +1,32 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerClient } from '@/lib/supabase/server'
-import { unstable_cache } from 'next/cache'
-import { revalidateTag } from 'next/cache'
+import { unstable_cache, revalidateTag } from 'next/cache'
 import { z } from 'zod'
+import { createServerClient } from '@/lib/supabase/server'
 import { verifyJwt, ADMIN_COOKIE } from '@/lib/auth/jwt'
 
-const getPopups = unstable_cache(
+const getAllPopups = unstable_cache(
   async () => {
     const db = createServerClient()
     const { data } = await db.from('popup_content').select('*').order('popup_key')
     return data ?? []
   },
-  ['popups'],
-  { tags: ['popups'], revalidate: 600 }
+  ['popups-all'],
+  { tags: ['popups'], revalidate: 600 },
 )
 
-export async function GET() {
-  const data = await getPopups()
-  return NextResponse.json(data)
-}
+const getActivePopups = unstable_cache(
+  async () => {
+    const db = createServerClient()
+    const { data } = await db
+      .from('popup_content')
+      .select('*')
+      .eq('is_active', true)
+      .order('popup_key')
+    return data ?? []
+  },
+  ['popups-active'],
+  { tags: ['popups'], revalidate: 600 },
+)
 
 const patchSchema = z.object({
   popup_key: z.string(),
@@ -26,6 +34,13 @@ const patchSchema = z.object({
   body: z.string().max(5000).optional(),
   is_active: z.boolean().optional(),
 })
+
+export async function GET(req: NextRequest) {
+  const token = req.cookies.get(ADMIN_COOKIE)?.value
+  const payload = token ? await verifyJwt(token) : null
+  const data = payload?.role === 'admin' ? await getAllPopups() : await getActivePopups()
+  return NextResponse.json(data)
+}
 
 export async function PATCH(req: NextRequest) {
   const token = req.cookies.get(ADMIN_COOKIE)?.value

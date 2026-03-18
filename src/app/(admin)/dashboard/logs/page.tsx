@@ -21,6 +21,10 @@ interface Log {
   materials: { name: string }
 }
 
+function getTodayKST() {
+  return new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' })
+}
+
 export default function LogsPage() {
   const [logs, setLogs] = useState<Log[]>([])
   const [total, setTotal] = useState(0)
@@ -28,8 +32,12 @@ export default function LogsPage() {
   const [loading, setLoading] = useState(false)
   const [loadError, setLoadError] = useState(false)
   const [deletingId, setDeletingId] = useState<number | null>(null)
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null)
   const [search, setSearch] = useState('')
   const [searchInput, setSearchInput] = useState('')
+  const [exportFrom, setExportFrom] = useState(getTodayKST)
+  const [exportTo, setExportTo] = useState(getTodayKST)
+  const [exportAll, setExportAll] = useState(false)
   const PAGE_SIZE = 50
 
   const load = useCallback(async () => {
@@ -58,10 +66,10 @@ export default function LogsPage() {
   }
 
   async function handleDelete(id: number) {
-    if (!confirm('이 배부 기록을 삭제하시겠습니까?')) return
     setDeletingId(id)
     await fetch(`/api/distribution/logs/${id}`, { method: 'DELETE' })
     setDeletingId(null)
+    setConfirmDeleteId(null)
     load()
   }
 
@@ -73,12 +81,27 @@ export default function LogsPage() {
         <h1 className="text-2xl font-bold text-gray-900">
           배부 로그 <span className="text-base text-gray-400 font-normal">({total}건)</span>
         </h1>
-        <a
-          href="/api/distribution/logs/export"
-          className="px-4 py-2 text-sm font-medium border border-gray-300 text-gray-700 bg-white hover:bg-gray-50"
-        >
-          CSV 내보내기
-        </a>
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+          <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer select-none">
+            <input type="checkbox" checked={exportAll} onChange={e => setExportAll(e.target.checked)} className="w-3.5 h-3.5" />
+            전체 기간
+          </label>
+          {!exportAll && (
+            <>
+              <input type="date" value={exportFrom} onChange={e => setExportFrom(e.target.value)}
+                className="px-2 py-1.5 text-xs border border-gray-300 focus:outline-none focus:border-blue-900" />
+              <span className="text-xs text-gray-400">~</span>
+              <input type="date" value={exportTo} onChange={e => setExportTo(e.target.value)}
+                className="px-2 py-1.5 text-xs border border-gray-300 focus:outline-none focus:border-blue-900" />
+            </>
+          )}
+          <a
+            href={exportAll ? '/api/distribution/logs/export?all=1' : `/api/distribution/logs/export?date_from=${exportFrom}&date_to=${exportTo}`}
+            className="px-4 py-2 text-sm font-medium border border-gray-300 text-gray-700 bg-white hover:bg-gray-50 whitespace-nowrap"
+          >
+            CSV 내보내기
+          </a>
+        </div>
       </div>
 
       <div className="flex gap-2 mb-4">
@@ -137,14 +160,20 @@ export default function LogsPage() {
                   </span>
                 </td>
                 <td className="px-4 py-3 text-gray-500 text-xs">{l.distributed_by || '-'}</td>
-                <td className="px-4 py-3">
-                  <button
-                    onClick={() => handleDelete(l.id)}
-                    disabled={deletingId === l.id}
-                    className="text-xs text-red-500 hover:underline disabled:opacity-40"
-                  >
-                    삭제
-                  </button>
+                <td className="px-4 py-3 whitespace-nowrap">
+                  {confirmDeleteId === l.id ? (
+                    <span className="inline-flex items-center gap-1">
+                      <button onClick={() => handleDelete(l.id)} disabled={deletingId === l.id}
+                        className="text-xs text-red-600 font-semibold hover:underline disabled:opacity-40">
+                        {deletingId === l.id ? '삭제 중...' : '확인'}
+                      </button>
+                      <span className="text-gray-300">|</span>
+                      <button onClick={() => setConfirmDeleteId(null)} className="text-xs text-gray-400 hover:underline">취소</button>
+                    </span>
+                  ) : (
+                    <button onClick={() => setConfirmDeleteId(l.id)}
+                      className="text-xs text-red-500 hover:underline">삭제</button>
+                  )}
                 </td>
               </tr>
             ))}

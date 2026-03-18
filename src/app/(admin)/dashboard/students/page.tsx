@@ -79,6 +79,8 @@ export default function StudentsPage() {
   const [distributing, setDistributing] = useState<Set<string>>(new Set())
   const [returning, setReturning] = useState<Set<string>>(new Set())
   const [distMsg, setDistMsg] = useState<{ text: string; ok: boolean } | null>(null)
+  const [confirmDeleteStudentId, setConfirmDeleteStudentId] = useState<string | null>(null)
+  const [confirmUndoKey, setConfirmUndoKey] = useState<string | null>(null)
   // 일괄 배부 선택
   const [selectedForBulk, setSelectedForBulk] = useState<Set<string>>(new Set())
   const [bulkDistributing, setBulkDistributing] = useState(false)
@@ -150,8 +152,8 @@ export default function StudentsPage() {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm('정말 삭제하시겠습니까?')) return
     const res = await fetch(`/api/students/${id}`, { method: 'DELETE' })
+    setConfirmDeleteStudentId(null)
     if (res.ok) load()
     else alert('삭제 실패')
   }
@@ -236,8 +238,8 @@ export default function StudentsPage() {
   }
 
   async function undo(studentId: string, materialId: number, studentName: string) {
-    if (!confirm(`${studentName}의 ${rcMaterials.find(m => m.id === materialId)?.name ?? '자료'} 수령을 취소(반납)하시겠습니까?`)) return
     const key = `${studentId}-${materialId}`
+    if (confirmUndoKey !== key) { setConfirmUndoKey(key); return }
     setReturning(prev => new Set(prev).add(key))
     const res = await fetch('/api/distribution/undo', {
       method: 'DELETE',
@@ -246,6 +248,7 @@ export default function StudentsPage() {
     })
     const data = await res.json()
     setReturning(prev => { const s = new Set(prev); s.delete(key); return s })
+    setConfirmUndoKey(null)
     if (res.ok) {
       const matName = rcMaterials.find(m => m.id === materialId)?.name ?? ''
       setDistMsg({ text: `↩ ${studentName} — ${matName} 반납 처리됨`, ok: true })
@@ -329,10 +332,17 @@ export default function StudentsPage() {
                     <td className="px-4 py-3 text-gray-600">{s.exam_number ?? '-'}</td>
                     <td className="px-4 py-3 text-gray-600">{s.series ?? '-'}</td>
                     <td className="px-4 py-3 text-gray-600">{s.region ?? '-'}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex gap-3">
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <div className="flex gap-3 items-center">
                         <button onClick={() => startEdit(s)} className="text-xs text-blue-600 hover:underline">수정</button>
-                        <button onClick={() => handleDelete(s.id)} className="text-xs text-red-500 hover:underline">삭제</button>
+                        {confirmDeleteStudentId === s.id ? (
+                          <>
+                            <button onClick={() => handleDelete(s.id)} className="text-xs text-red-600 font-semibold hover:underline">확인</button>
+                            <button onClick={() => setConfirmDeleteStudentId(null)} className="text-xs text-gray-400 hover:underline">취소</button>
+                          </>
+                        ) : (
+                          <button onClick={() => setConfirmDeleteStudentId(s.id)} className="text-xs text-red-500 hover:underline">삭제</button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -445,14 +455,20 @@ export default function StudentsPage() {
                                 {receivedSet.has(m.id) ? (
                                   <div className="inline-flex items-center gap-1">
                                     <span className="inline-flex items-center justify-center w-6 h-6 bg-green-600 text-white text-xs font-bold">✓</span>
-                                    <button
-                                      onClick={() => undo(s.id, m.id, s.name)}
-                                      disabled={returning.has(`${s.id}-${m.id}`)}
-                                      title="반납"
-                                      className="w-5 h-5 flex items-center justify-center bg-red-100 text-red-500 hover:bg-red-500 hover:text-white text-xs font-bold border border-red-300 disabled:opacity-30 transition-colors"
-                                    >
-                                      {returning.has(`${s.id}-${m.id}`) ? '…' : '×'}
-                                    </button>
+                                    {confirmUndoKey === `${s.id}-${m.id}` ? (
+                                      <>
+                                        <button onClick={() => undo(s.id, m.id, s.name)} disabled={returning.has(`${s.id}-${m.id}`)}
+                                          className="text-[10px] text-red-600 font-bold hover:underline disabled:opacity-40">
+                                          {returning.has(`${s.id}-${m.id}`) ? '…' : '반납'}
+                                        </button>
+                                        <button onClick={() => setConfirmUndoKey(null)} className="text-[10px] text-gray-400 hover:underline">취소</button>
+                                      </>
+                                    ) : (
+                                      <button onClick={() => undo(s.id, m.id, s.name)} title="반납"
+                                        className="w-5 h-5 flex items-center justify-center bg-red-100 text-red-500 hover:bg-red-500 hover:text-white text-xs font-bold border border-red-300 transition-colors">
+                                        ×
+                                      </button>
+                                    )}
                                   </div>
                                 ) : (
                                   <button

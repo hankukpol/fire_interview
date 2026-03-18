@@ -15,8 +15,8 @@ const studentSchema = z.object({
 
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams
-  const page = Math.max(1, Number(sp.get('page') ?? 1))
-  const limit = Math.min(100, Math.max(1, Number(sp.get('limit') ?? 20)))
+  const page = Math.max(1, parseInt(sp.get('page') ?? '1', 10) || 1)
+  const limit = Math.min(100, Math.max(1, parseInt(sp.get('limit') ?? '20', 10) || 20))
   const search = sp.get('search') ?? ''
   const offset = (page - 1) * limit
 
