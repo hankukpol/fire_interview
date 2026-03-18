@@ -78,7 +78,9 @@ export async function middleware(req: NextRequest) {
       if (pathname.startsWith('/api/')) {
         return NextResponse.json({ error: '직원 인증이 필요합니다.' }, { status: 401 })
       }
-      return NextResponse.redirect(new URL('/staff/login', req.url))
+      const loginUrl = new URL('/staff/login', req.url)
+      loginUrl.searchParams.set('redirect', `${pathname}${req.nextUrl.search}`)
+      return NextResponse.redirect(loginUrl)
     }
   }
 

@@ -27,7 +27,22 @@ interface ResultOverlay {
 
 interface Material { id: number; name: string; is_active: boolean }
 interface CameraOption { id: string; label: string }
-type ScannerInstance = { stop: () => Promise<void>; clear: () => void }
+type ExtendedTrackCapabilities = MediaTrackCapabilities & {
+  focusMode?: string[]
+  zoom?: MediaSettingsRange
+}
+type ExtendedTrackSettings = MediaTrackSettings & { zoom?: number }
+type ExtendedConstraintSet = MediaTrackConstraintSet & {
+  focusMode?: string
+  zoom?: number
+}
+type ScannerInstance = {
+  stop: () => Promise<void>
+  clear: () => void
+  getRunningTrackCapabilities?: () => ExtendedTrackCapabilities
+  getRunningTrackSettings?: () => ExtendedTrackSettings
+  applyVideoConstraints?: (constraints: MediaTrackConstraints) => Promise<void>
+}
 
 export default function ScanPage() {
   const [tab, setTab] = useState<TabMode>('qr')
@@ -42,6 +57,7 @@ export default function ScanPage() {
   const isStartingRef = useRef(false)
   const overlayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const recentScanRef = useRef<Map<string, number>>(new Map())
+  const initialUrlTokenRef = useRef('')
 
   // 빠른 배부
   const [materials, setMaterials] = useState<Material[]>([])
@@ -51,13 +67,26 @@ export default function ScanPage() {
   const [quickMsg, setQuickMsg] = useState<{ text: string; ok: boolean } | null>(null)
 
   useEffect(() => {
+    if (typeof window !== 'undefined') {
+      initialUrlTokenRef.current = new URLSearchParams(window.location.search).get('token')?.trim() ?? ''
+    }
+
     fetch('/api/materials').then(r => r.json()).then(d => {
       const active = (d.materials ?? []).filter((m: Material) => m.is_active)
       setMaterials(active)
       if (active.length > 0) setQuickMatId(active[0].id)
     })
     // rAF으로 레이아웃 완성 후 시작 (offsetWidth가 0으로 읽히는 문제 방지)
-    const rafId = requestAnimationFrame(() => startScanner())
+    const bootScanner = async () => {
+      if (initialUrlTokenRef.current) {
+        clearUrlToken()
+        await handleScan(initialUrlTokenRef.current)
+      }
+
+      await startScanner()
+    }
+
+    const rafId = requestAnimationFrame(() => { void bootScanner() })
     return () => { cancelAnimationFrame(rafId); stopScanner() }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -67,9 +96,87 @@ export default function ScanPage() {
     if (qrEl) qrEl.innerHTML = ''
   }
 
-  function getPreferredCamera(cameras: CameraOption[]) {
-    return cameras.find(camera => /back|rear|environment/i.test(camera.label))
-      ?? cameras[cameras.length - 1]
+  function clearUrlToken() {
+    if (typeof window === 'undefined') return
+
+    const url = new URL(window.location.href)
+    if (!url.searchParams.has('token')) return
+
+    url.searchParams.delete('token')
+    window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`)
+  }
+
+  function parseCameraZoom(label: string) {
+    const match = label.toLowerCase().match(/(\d+(?:\.\d+)?)\s*x\b/)
+    if (!match) return null
+
+    const zoom = Number(match[1])
+    return Number.isFinite(zoom) ? zoom : null
+  }
+
+  function getCameraPriority(camera: CameraOption) {
+    const label = camera.label.trim().toLowerCase()
+    const zoom = parseCameraZoom(label)
+    let score = 0
+
+    if (!label) return -50
+    if (/(front|user|selfie|face|전면)/i.test(label)) score -= 600
+    if (/(back|rear|environment|후면)/i.test(label)) score += 400
+    if (/(main|standard|default|기본)/i.test(label)) score += 160
+    if (/\b1x\b/.test(label)) score += 220
+    if (/wide/.test(label) && !/ultra[\s-]?wide/.test(label)) score += 40
+    if (/(ultra[\s-]?wide|0\.5x|macro|depth|tof|virtual)/i.test(label)) score -= 260
+    if (/(tele|telephoto|periscope)/i.test(label)) score -= 120
+
+    if (zoom !== null) {
+      score += 180 - Math.round(Math.abs(zoom - 1) * 140)
+    }
+
+    return score
+  }
+
+  function getRankedCameraTargets(cameras: CameraOption[]) {
+    const withLabels = cameras.filter(camera => camera.label.trim())
+    const ranked = [...withLabels].sort((left, right) => {
+      const priorityDiff = getCameraPriority(right) - getCameraPriority(left)
+      if (priorityDiff !== 0) return priorityDiff
+      return left.label.localeCompare(right.label)
+    })
+
+    return ranked.map(camera => camera.id)
+  }
+
+  async function optimizeRunningCamera(scanner: ScannerInstance) {
+    if (!scanner.applyVideoConstraints) return
+
+    try {
+      const capabilities = scanner.getRunningTrackCapabilities?.()
+      const settings = scanner.getRunningTrackSettings?.()
+      const advanced: ExtendedConstraintSet[] = []
+
+      if (Array.isArray(capabilities?.focusMode)) {
+        if (capabilities.focusMode.includes('continuous')) {
+          advanced.push({ focusMode: 'continuous' })
+        } else if (capabilities.focusMode.includes('single-shot')) {
+          advanced.push({ focusMode: 'single-shot' })
+        }
+      }
+
+      if (capabilities?.zoom) {
+        const { min, max } = capabilities.zoom
+        const canResetToOneX = typeof min === 'number' && typeof max === 'number' && min <= 1 && max >= 1
+        const currentZoom = typeof settings?.zoom === 'number' ? settings.zoom : null
+        if (canResetToOneX && (currentZoom === null || currentZoom < 0.95 || currentZoom > 1.25)) {
+          advanced.push({ zoom: 1 })
+        }
+      }
+
+      if (advanced.length > 0) {
+        await scanner.applyVideoConstraints({ advanced })
+      }
+    } catch {
+      // Ignore capability-specific tuning failures and keep scanning.
+    }
   }
 
   function optimizeScannerVideo() {
@@ -183,6 +290,14 @@ export default function ScanPage() {
       })
       const targets: Array<string | { facingMode: 'environment' | { exact: 'environment' } }> = []
 
+      try {
+        const cameras = await Html5Qrcode.getCameras()
+        const rankedTargets = getRankedCameraTargets(cameras)
+        targets.push(...rankedTargets)
+      } catch (error) {
+        if (isPermissionDeniedError(error)) throw error
+      }
+
       targets.push({ facingMode: { exact: 'environment' } })
       targets.push({ facingMode: 'environment' })
 
@@ -193,6 +308,7 @@ export default function ScanPage() {
         try {
           await scanner.start(target, config, cb, undefined)
           scannerRef.current = scanner
+          await optimizeRunningCamera(scanner)
           optimizeScannerVideo()
           return
         } catch (error) {
@@ -204,13 +320,7 @@ export default function ScanPage() {
 
       if (!isPermissionDeniedError(lastError)) {
         const cameras = await Html5Qrcode.getCameras()
-        const preferredCamera = cameras.length > 0 ? getPreferredCamera(cameras) : null
-        const fallbackTargets: string[] = []
-
-        if (preferredCamera?.id) fallbackTargets.push(preferredCamera.id)
-        if (cameras[0]?.id && cameras[0].id !== preferredCamera?.id) {
-          fallbackTargets.push(cameras[0].id)
-        }
+        const fallbackTargets = cameras.map(camera => camera.id).filter(Boolean)
 
         for (const target of fallbackTargets) {
           clearScannerContainer()
@@ -218,6 +328,7 @@ export default function ScanPage() {
           try {
             await scanner.start(target, config, cb, undefined)
             scannerRef.current = scanner
+            await optimizeRunningCamera(scanner)
             optimizeScannerVideo()
             return
           } catch (error) {
