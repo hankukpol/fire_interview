@@ -72,6 +72,9 @@ export default function ScanPage() {
       )
       scannerRef.current = scanner // start 성공 후에만 세팅
     } catch {
+      // html5-qrcode가 DOM에 주입한 요소 정리 (플래시 현상 방지)
+      const el = document.getElementById('qr-reader')
+      if (el) el.innerHTML = ''
       scannerRef.current = null // 실패 시 반드시 초기화
       setState('idle')
       showOverlay({ success: false, title: '카메라 권한이 필요합니다. 브라우저 설정에서 허용해 주세요.' }, 5000)
@@ -222,7 +225,7 @@ export default function ScanPage() {
               id="qr-reader"
               ref={containerRef}
               className="w-full"
-              style={{ minHeight: state !== 'idle' ? 300 : 4 }}
+              style={{ minHeight: (state !== 'idle' || !!overlay) ? 300 : 4 }}
             />
 
             {/* 처리 중 오버레이 */}
