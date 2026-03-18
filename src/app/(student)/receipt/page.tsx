@@ -158,7 +158,14 @@ export default function ReceiptPage() {
     <div className="flex flex-col min-h-dvh">
       {/* 헤더 */}
       <div className="text-white text-center py-5 px-4" style={{ background: 'var(--theme)' }}>
-        <h1 className="text-xl font-bold">{data.appName}</h1>
+        <h1 className="text-xl font-bold whitespace-pre-wrap">
+          {(data.appName || '').split(/<br\s*\/?>/i).map((line, i, arr) => (
+            <span key={i}>
+              {line}
+              {i < arr.length - 1 && <br />}
+            </span>
+          ))}
+        </h1>
         <p className="text-sm mt-1 text-white/80">{dateStr}</p>
       </div>
 
