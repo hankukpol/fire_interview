@@ -4,6 +4,9 @@ import { useState, useEffect, useRef } from 'react'
 
 type ScanState = 'idle' | 'scanning' | 'processing' | 'selecting'
 type TabMode = 'qr' | 'quick'
+const SUCCESS_OVERLAY_MS = 900
+const FAILURE_OVERLAY_MS = 1800
+const SCAN_TOKEN_COOLDOWN_MS = 2500
 
 interface ScanResult {
   success: boolean
@@ -38,6 +41,7 @@ export default function ScanPage() {
   const isProcessingRef = useRef(false)
   const isStartingRef = useRef(false)
   const overlayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const recentScanRef = useRef<Map<string, number>>(new Map())
 
   // 빠른 배부
   const [materials, setMaterials] = useState<Material[]>([])
@@ -108,6 +112,34 @@ export default function ScanPage() {
     }
 
     return '카메라를 시작할 수 없습니다. 페이지를 새로고침한 뒤 다시 시도해 주세요.'
+  }
+
+  function normalizeScanToken(decodedText: string) {
+    try {
+      const url = new URL(decodedText)
+      return url.searchParams.get('token') ?? decodedText
+    } catch {
+      return decodedText
+    }
+  }
+
+  function isRecentlyProcessed(token: string) {
+    const now = Date.now()
+    for (const [savedToken, savedAt] of recentScanRef.current.entries()) {
+      if (now - savedAt > SCAN_TOKEN_COOLDOWN_MS) recentScanRef.current.delete(savedToken)
+    }
+
+    const lastProcessedAt = recentScanRef.current.get(token)
+    return typeof lastProcessedAt === 'number' && now - lastProcessedAt < SCAN_TOKEN_COOLDOWN_MS
+  }
+
+  function markRecentlyProcessed(token: string) {
+    recentScanRef.current.set(token, Date.now())
+  }
+
+  function notifyScanHandled(success: boolean) {
+    if (typeof navigator === 'undefined' || typeof navigator.vibrate !== 'function') return
+    navigator.vibrate(success ? 45 : 120)
   }
 
   function isPermissionDeniedError(error: unknown) {
@@ -230,12 +262,11 @@ export default function ScanPage() {
   }
 
   async function handleScan(decodedText: string) {
+    const token = normalizeScanToken(decodedText)
+    if (isRecentlyProcessed(token)) return
     if (isProcessingRef.current) return // 처리 중이면 무시 (연속 인식 방지)
     isProcessingRef.current = true
     setState('processing')
-
-    let token = decodedText
-    try { const url = new URL(decodedText); token = url.searchParams.get('token') ?? decodedText } catch { /* not URL */ }
     pendingTokenRef.current = token
 
     try {
@@ -256,18 +287,22 @@ export default function ScanPage() {
       setState('scanning') // 카메라 계속 켜진 상태로 복귀
 
       if (data.success) {
-        showOverlay({ success: true, title: `✓  ${data.materialName} 배부 완료`, studentName: data.studentName })
+        markRecentlyProcessed(token)
+        notifyScanHandled(true)
+        showOverlay({ success: true, title: `✓  ${data.materialName} 배부 완료`, studentName: data.studentName }, SUCCESS_OVERLAY_MS)
       } else {
         let title = '처리 실패'
         if (data.reason === 'ALREADY_RECEIVED') title = '이미 수령한 자료입니다'
         else if (data.reason === 'ALL_RECEIVED') title = '모든 자료를 수령했습니다'
         else if (data.reason === 'INVALID_TOKEN') title = '유효하지 않은 QR 코드'
         else if (data.reason) title = data.reason
-        showOverlay({ success: false, title, studentName: data.studentName }, 3000)
+        markRecentlyProcessed(token)
+        notifyScanHandled(false)
+        showOverlay({ success: false, title, studentName: data.studentName }, FAILURE_OVERLAY_MS)
       }
     } catch {
       setState('scanning')
-      showOverlay({ success: false, title: '네트워크 오류가 발생했습니다' }, 3000)
+      showOverlay({ success: false, title: '네트워크 오류가 발생했습니다' }, FAILURE_OVERLAY_MS)
     }
   }
 
@@ -286,14 +321,18 @@ export default function ScanPage() {
       setState('scanning')
 
       if (data.success) {
-        showOverlay({ success: true, title: `✓  ${data.materialName} 배부 완료`, studentName: data.studentName })
+        markRecentlyProcessed(token)
+        notifyScanHandled(true)
+        showOverlay({ success: true, title: `✓  ${data.materialName} 배부 완료`, studentName: data.studentName }, SUCCESS_OVERLAY_MS)
       } else {
-        showOverlay({ success: false, title: '처리 실패' })
+        markRecentlyProcessed(token)
+        notifyScanHandled(false)
+        showOverlay({ success: false, title: '처리 실패' }, FAILURE_OVERLAY_MS)
       }
     } catch {
       setSelectResult(null)
       setState('scanning')
-      showOverlay({ success: false, title: '네트워크 오류가 발생했습니다' }, 3000)
+      showOverlay({ success: false, title: '네트워크 오류가 발생했습니다' }, FAILURE_OVERLAY_MS)
     }
   }
 

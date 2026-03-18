@@ -87,90 +87,82 @@ export default function StudentLoginPage() {
   }
 
   return (
-    <div className="flex flex-col min-h-dvh">
-      {/* 헤더 */}
-      <div
-        className="text-white text-center py-5 px-4"
-        style={{ background: 'var(--theme)' }}
-      >
-        <h1 className="text-xl font-bold leading-snug">
+    <div className="flex flex-col items-center justify-center min-h-dvh bg-white p-6">
+      <div className="w-full max-w-[320px] flex flex-col gap-10">
+        {/* 타이틀 / 로고 */}
+        <h1 className="text-2xl font-extrabold text-center tracking-tight break-keep text-gray-900">
           {appName || '면접 모바일 접수증'}
         </h1>
-      </div>
 
-      <div className="flex-1 flex flex-col justify-center gap-4 p-6">
-        {/* 저장된 정보 빠른 로그인 */}
-        {savedName && !showForm && (
-          <div className="flex flex-col gap-3">
-            <p className="text-sm text-gray-500">최근 로그인 정보</p>
-            <div className="border border-gray-200 rounded-xl p-4 flex items-center justify-between bg-gray-50">
-              <div>
-                <p className="font-semibold text-gray-900">{savedName}</p>
-                <p className="text-sm text-gray-500 mt-0.5">{maskPhone(savedPhone)}</p>
+        <div className="flex flex-col w-full">
+          {/* 저장된 정보 빠른 로그인 */}
+          {savedName && !showForm && (
+            <div className="flex flex-col gap-6">
+              <div className="bg-[#f0f4ff] p-5 flex items-center justify-between">
+                <div>
+                  <p className="font-bold text-gray-900 text-lg">{savedName}</p>
+                  <p className="text-sm text-gray-600 mt-1">{maskPhone(savedPhone)}</p>
+                </div>
+                <button
+                  onClick={handleOtherUser}
+                  className="text-sm text-gray-500 hover:text-gray-800 underline transition-colors"
+                >
+                  다른 계정
+                </button>
               </div>
+
+              {error && <p className="text-sm text-red-600 text-center">{error}</p>}
+
               <button
-                onClick={handleOtherUser}
-                className="text-xs text-red-400 underline"
+                onClick={handleQuickLogin}
+                disabled={loading}
+                className="w-full py-4 text-white font-bold text-lg transition-opacity disabled:opacity-60"
+                style={{ background: 'var(--theme)' }}
               >
-                삭제
+                {loading ? '로그인 중...' : '바로 로그인'}
               </button>
             </div>
+          )}
 
-            {error && <p className="text-sm text-red-600">{error}</p>}
+          {/* 직접 입력 폼 */}
+          {showForm && (
+            <form onSubmit={handleSubmit} className="flex flex-col gap-6">
+              <div className="flex flex-col gap-0.5 bg-white">
+                <input
+                  type="text"
+                  value={name}
+                  onChange={e => setName(e.target.value)}
+                  placeholder="이름"
+                  autoComplete="name"
+                  autoFocus
+                  className="w-full px-4 py-4 bg-[#f0f4ff] text-base focus:outline-none focus:bg-[#e4ebff] transition-colors placeholder:text-gray-500 text-gray-900 border-none"
+                />
+                <input
+                  type="tel"
+                  value={phone}
+                  onChange={e => setPhone(e.target.value.replace(/\D/g, ''))}
+                  placeholder="연락처 (숫자만)"
+                  autoComplete="tel"
+                  inputMode="numeric"
+                  className="w-full px-4 py-4 bg-[#f0f4ff] text-base focus:outline-none focus:bg-[#e4ebff] transition-colors placeholder:text-gray-500 text-gray-900 border-none"
+                />
+              </div>
 
-            <button
-              onClick={handleQuickLogin}
-              disabled={loading}
-              className="w-full py-3 text-white font-medium text-base rounded-xl transition-opacity disabled:opacity-60"
-              style={{ background: 'var(--theme)' }}
-            >
-              {loading ? '로그인 중...' : '바로 로그인'}
-            </button>
-          </div>
-        )}
+              {error && (
+                <p className="text-sm text-red-600 text-center">{error}</p>
+              )}
 
-        {/* 직접 입력 폼 */}
-        {showForm && (
-          <form onSubmit={handleSubmit} className="flex flex-col gap-5">
-            <div className="flex flex-col gap-2">
-              <label className="text-sm font-medium text-gray-700">이름</label>
-              <input
-                type="text"
-                value={name}
-                onChange={e => setName(e.target.value)}
-                placeholder="홍길동"
-                autoComplete="name"
-                autoFocus
-                className="w-full px-4 py-3 border border-gray-300 text-base focus:outline-none focus:border-blue-900"
-              />
-            </div>
-            <div className="flex flex-col gap-2">
-              <label className="text-sm font-medium text-gray-700">연락처</label>
-              <input
-                type="tel"
-                value={phone}
-                onChange={e => setPhone(e.target.value.replace(/\D/g, ''))}
-                placeholder="01012345678"
-                autoComplete="tel"
-                inputMode="numeric"
-                className="w-full px-4 py-3 border border-gray-300 text-base focus:outline-none focus:border-blue-900"
-              />
-            </div>
-
-            {error && (
-              <p className="text-sm text-red-600 -mt-2">{error}</p>
-            )}
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full py-3 text-white font-medium text-base transition-opacity disabled:opacity-60"
-              style={{ background: 'var(--theme)' }}
-            >
-              {loading ? '로그인 중...' : '로그인'}
-            </button>
-          </form>
-        )}
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full py-4 text-white font-bold text-lg transition-opacity disabled:opacity-60"
+                style={{ background: 'var(--theme)' }}
+              >
+                {loading ? '로그인 중...' : '로그인'}
+              </button>
+            </form>
+          )}
+        </div>
       </div>
     </div>
   )
