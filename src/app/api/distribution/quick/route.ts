@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
     p_note: '',
   })
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return NextResponse.json({ error: '서버 오류가 발생했습니다.' }, { status: 500 })
 
   const result = data as { success: boolean; reason?: string; material_name?: string; student_name?: string }
   if (!result.success) {

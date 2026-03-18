@@ -79,6 +79,9 @@ export default function StudentsPage() {
   const [distributing, setDistributing] = useState<Set<string>>(new Set())
   const [returning, setReturning] = useState<Set<string>>(new Set())
   const [distMsg, setDistMsg] = useState<{ text: string; ok: boolean } | null>(null)
+  // 일괄 배부 선택
+  const [selectedForBulk, setSelectedForBulk] = useState<Set<string>>(new Set())
+  const [bulkDistributing, setBulkDistributing] = useState(false)
 
   const PAGE_SIZE = 20
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -130,7 +133,7 @@ export default function StudentsPage() {
 
   useEffect(() => { load() }, [load])
   useEffect(() => { if (tab === 'receipt') loadReceipt() }, [tab, loadReceipt])
-  useEffect(() => { if (filterMatId !== null) { loadFiltered(); setFilteredSearch('') } }, [filterMatId, loadFiltered])
+  useEffect(() => { if (filterMatId !== null) { loadFiltered(); setFilteredSearch(''); setSelectedForBulk(new Set()) } }, [filterMatId, loadFiltered])
 
   async function handleSave() {
     setSaving(true)
@@ -200,6 +203,36 @@ export default function StudentsPage() {
       setDistMsg({ text: data.error ?? '배부 실패', ok: false })
     }
     setTimeout(() => setDistMsg(null), 3000)
+  }
+
+  async function bulkDistribute() {
+    if (!filterMatId || selectedForBulk.size === 0) return
+    setBulkDistributing(true)
+    const ids = [...selectedForBulk]
+    const results = await Promise.all(
+      ids.map(studentId =>
+        fetch('/api/distribution/manual', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ student_id: studentId, material_id: filterMatId, note: '관리자 일괄배부' }),
+        }).then(r => r.json().then(d => ({ studentId, ok: r.ok, data: d })))
+      )
+    )
+    const succeeded = results.filter(r => r.ok).map(r => r.studentId)
+    const failed = results.filter(r => !r.ok).length
+    setBulkDistributing(false)
+    setSelectedForBulk(new Set())
+    if (succeeded.length > 0) {
+      setFilteredStudents(prev => prev.filter(s => !succeeded.includes(s.id)))
+      const matName = rcMaterials.find(m => m.id === filterMatId)?.name ?? ''
+      setDistMsg({
+        text: `✓ ${succeeded.length}명 일괄 배부 완료${failed > 0 ? ` (${failed}명 실패)` : ''} — ${matName}`,
+        ok: failed === 0,
+      })
+    } else {
+      setDistMsg({ text: '일괄 배부에 실패했습니다.', ok: false })
+    }
+    setTimeout(() => setDistMsg(null), 4000)
   }
 
   async function undo(studentId: string, materialId: number, studentName: string) {
@@ -467,57 +500,91 @@ export default function StudentsPage() {
           )}
 
           {/* ── 자료별 미수령 배부 뷰 ── */}
-          {filterMatId !== null && (
-            <>
-              <input
-                value={filteredSearch}
-                onChange={e => setFilteredSearch(e.target.value)}
-                placeholder="이름, 수험번호, 핸드폰번호로 검색..."
-                className="w-full px-4 py-2.5 border border-gray-200 text-sm mb-4 focus:outline-none focus:border-blue-900"
-              />
-              <div className="bg-white border border-gray-200 overflow-auto">
-                <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-                  <span className="text-sm font-medium text-gray-700">
-                    {rcMaterials.find(m => m.id === filterMatId)?.name} 미수령
-                  </span>
-                  <span className="text-sm text-gray-500">
-                    {filteredLoading ? '조회 중...' : (() => {
-                      const q = filteredSearch.trim().toLowerCase()
-                      const shown = q ? filteredStudents.filter(s =>
-                        s.name.toLowerCase().includes(q) ||
-                        (s.exam_number ?? '').toLowerCase().includes(q) ||
-                        s.phone.includes(q)
-                      ).length : filteredStudents.length
-                      return filteredSearch.trim() ? `${shown} / ${filteredStudents.length}명` : `${filteredStudents.length}명`
-                    })()}
-                  </span>
+          {filterMatId !== null && (() => {
+            const q = filteredSearch.trim().toLowerCase()
+            const display = q ? filteredStudents.filter(s =>
+              s.name.toLowerCase().includes(q) ||
+              (s.exam_number ?? '').toLowerCase().includes(q) ||
+              s.phone.includes(q)
+            ) : filteredStudents
+            const displayIds = display.map(s => s.id)
+            const allChecked = displayIds.length > 0 && displayIds.every(id => selectedForBulk.has(id))
+            const someChecked = displayIds.some(id => selectedForBulk.has(id))
+
+            function toggleAll() {
+              if (allChecked) {
+                setSelectedForBulk(prev => { const s = new Set(prev); displayIds.forEach(id => s.delete(id)); return s })
+              } else {
+                setSelectedForBulk(prev => new Set([...prev, ...displayIds]))
+              }
+            }
+            function toggleOne(id: string) {
+              setSelectedForBulk(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
+            }
+
+            return (
+              <>
+                <div className="flex items-center gap-3 mb-3 flex-wrap">
+                  <input
+                    value={filteredSearch}
+                    onChange={e => setFilteredSearch(e.target.value)}
+                    placeholder="이름, 수험번호, 핸드폰번호로 검색..."
+                    className="flex-1 min-w-0 px-4 py-2.5 border border-gray-200 text-sm focus:outline-none focus:border-blue-900"
+                  />
+                  {selectedForBulk.size > 0 && (
+                    <button
+                      onClick={bulkDistribute}
+                      disabled={bulkDistributing}
+                      className="px-4 py-2.5 text-sm font-medium text-white whitespace-nowrap disabled:opacity-50"
+                      style={{ background: 'var(--theme)' }}
+                    >
+                      {bulkDistributing ? '처리 중...' : `선택 ${selectedForBulk.size}명 일괄 배부`}
+                    </button>
+                  )}
                 </div>
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50 border-b border-gray-100">
-                    <tr>
-                      {['이름', '수험번호', '직렬', '지역', '배부'].map(h => (
-                        <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-500">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredLoading ? (
-                      <tr><td colSpan={5} className="text-center py-8 text-gray-400">로딩 중...</td></tr>
-                    ) : filteredStudents.length === 0 ? (
-                      <tr><td colSpan={5} className="text-center py-8 text-green-600 font-medium">전원 수령 완료!</td></tr>
-                    ) : (() => {
-                      const q = filteredSearch.trim().toLowerCase()
-                      const display = q ? filteredStudents.filter(s =>
-                        s.name.toLowerCase().includes(q) ||
-                        (s.exam_number ?? '').toLowerCase().includes(q) ||
-                        s.phone.includes(q)
-                      ) : filteredStudents
-                      return display.length === 0 ? (
-                        <tr><td colSpan={5} className="text-center py-8 text-gray-400">검색 결과가 없습니다.</td></tr>
+                <div className="bg-white border border-gray-200 overflow-auto">
+                  <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+                    <span className="text-sm font-medium text-gray-700">
+                      {rcMaterials.find(m => m.id === filterMatId)?.name} 미수령
+                    </span>
+                    <span className="text-sm text-gray-500">
+                      {filteredLoading ? '조회 중...' : (
+                        filteredSearch.trim() ? `${display.length} / ${filteredStudents.length}명` : `${filteredStudents.length}명`
+                      )}
+                    </span>
+                  </div>
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 border-b border-gray-100">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 w-8">
+                          <input
+                            type="checkbox"
+                            checked={allChecked}
+                            ref={el => { if (el) el.indeterminate = someChecked && !allChecked }}
+                            onChange={toggleAll}
+                            className="cursor-pointer"
+                          />
+                        </th>
+                        {['이름', '수험번호', '직렬', '지역', '배부'].map(h => (
+                          <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-500">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredLoading ? (
+                        <tr><td colSpan={6} className="text-center py-8 text-gray-400">로딩 중...</td></tr>
+                      ) : filteredStudents.length === 0 ? (
+                        <tr><td colSpan={6} className="text-center py-8 text-green-600 font-medium">전원 수령 완료!</td></tr>
+                      ) : display.length === 0 ? (
+                        <tr><td colSpan={6} className="text-center py-8 text-gray-400">검색 결과가 없습니다.</td></tr>
                       ) : display.map(s => {
                         const key = `${s.id}-${filterMatId}`
+                        const checked = selectedForBulk.has(s.id)
                         return (
-                          <tr key={s.id} className="border-b border-gray-50 hover:bg-gray-50">
+                          <tr key={s.id} className={`border-b border-gray-50 hover:bg-gray-50 ${checked ? 'bg-blue-50/60' : ''}`}>
+                            <td className="px-4 py-3">
+                              <input type="checkbox" checked={checked} onChange={() => toggleOne(s.id)} className="cursor-pointer" />
+                            </td>
                             <td className="px-4 py-3 font-medium">{s.name}</td>
                             <td className="px-4 py-3 text-gray-600">{s.exam_number ?? '-'}</td>
                             <td className="px-4 py-3 text-gray-600">{s.series ?? '-'}</td>
@@ -534,13 +601,13 @@ export default function StudentsPage() {
                             </td>
                           </tr>
                         )
-                      })
-                    })()}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )}
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )
+          })()}
         </>
       )}
 

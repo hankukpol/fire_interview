@@ -8,6 +8,6 @@ export async function DELETE(
   const { id } = await params
   const db = createServerClient()
   const { error } = await db.from('distribution_logs').delete().eq('id', Number(id))
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return NextResponse.json({ error: '서버 오류가 발생했습니다.' }, { status: 500 })
   return NextResponse.json({ success: true })
 }

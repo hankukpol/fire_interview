@@ -239,7 +239,7 @@ export default function ScanPage() {
                   {result.success && result.materialName && <div className="flex justify-between py-2"><span className="text-sm text-gray-500">배부 자료</span><span className="text-sm font-semibold text-green-700">{result.materialName}</span></div>}
                 </div>
               )}
-              <button onClick={() => { setResult(null); setState('idle') }} className="w-full max-w-sm py-4 text-white font-bold text-base" style={{ background: result.success ? '#2E7D32' : '#EF6C00' }}>
+              <button onClick={() => { setResult(null); startScanner() }} className="w-full max-w-sm py-4 text-white font-bold text-base" style={{ background: result.success ? '#2E7D32' : '#EF6C00' }}>
                 다음 학생 스캔하기
               </button>
             </>

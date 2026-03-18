@@ -12,7 +12,24 @@
       "Bash(python3 -c \":*)",
       "Bash(git add -A)",
       "Bash(cat \"d:/앱 프로그램/interview-receipt-next/src/app/\\(student\\)/layout.tsx\")",
-      "Bash(cat \"d:/앱 프로그램/interview-receipt-next/src/app/\\(admin\\)/dashboard/page.tsx\")"
+      "Bash(cat \"d:/앱 프로그램/interview-receipt-next/src/app/\\(admin\\)/dashboard/page.tsx\")",
+      "Bash(ls -la \"d:\\\\앱 프로그램\\\\interview-receipt-next/src/app/\\(admin\\)/\")",
+      "Bash(cat \"src/app/\\(student\\)/layout.tsx\")",
+      "Bash(cat \"src/app/\\(student\\)/page.tsx\")",
+      "Bash(cat \"src/app/\\(student\\)/receipt/page.tsx\")",
+      "Bash(cat \"src/app/\\(staff\\)/layout.tsx\")",
+      "Bash(cat \"src/app/\\(staff\\)/scan/page.tsx\")",
+      "Bash(xargs ls -la)",
+      "Bash(git add src/ run-local.bat)",
+      "Bash(git push origin master)",
+      "Bash(git checkout main)",
+      "Bash(git merge master --no-edit)",
+      "Bash(git push origin main)",
+      "Bash(git add src/ .gitignore)",
+      "Bash(git add src/app/api/distribution/scan/route.ts src/app/\\\\\\(staff\\\\\\)/scan/page.tsx)",
+      "Bash(git checkout master)",
+      "Bash(git add src/app/api/distribution/scan/route.ts \"src/app/\\(staff\\)/scan/page.tsx\")",
+      "Bash(git push origin master:main --force)"
     ]
   }
 }

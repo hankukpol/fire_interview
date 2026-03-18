@@ -26,7 +26,7 @@ export async function PATCH(
     .eq('id', Number(id))
     .select()
     .single()
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return NextResponse.json({ error: '서버 오류가 발생했습니다.' }, { status: 500 })
   await invalidateCache('materials')
   return NextResponse.json({ material: data })
 }
@@ -38,7 +38,7 @@ export async function DELETE(
   const { id } = await params
   const db = createServerClient()
   const { error } = await db.from('materials').delete().eq('id', Number(id))
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return NextResponse.json({ error: '서버 오류가 발생했습니다.' }, { status: 500 })
   await invalidateCache('materials')
   return NextResponse.json({ success: true })
 }

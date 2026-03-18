@@ -4,6 +4,13 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { QRCodeSVG } from 'qrcode.react'
 import type { Student, Material } from '@/types/database'
+import { formatKoreanDate } from '@/lib/utils'
+
+function isStudent(obj: unknown): obj is Student {
+  if (typeof obj !== 'object' || obj === null) return false
+  const s = obj as Record<string, unknown>
+  return typeof s.id === 'string' && typeof s.name === 'string' && typeof s.phone === 'string'
+}
 
 interface ReceiptData {
   student: Student
@@ -20,7 +27,7 @@ export default function ReceiptPage() {
   const router = useRouter()
   const [data, setData] = useState<ReceiptData | null>(null)
   const [fetchError, setFetchError] = useState(false)
-  const [modal, setModal] = useState<'notice' | 'refund' | null>(null)
+  const [modal, setModal] = useState<'notice' | 'refund' | 'back-confirm' | null>(null)
   const [dateStr, setDateStr] = useState('')
   const [newlyReceived, setNewlyReceived] = useState<Set<number>>(new Set())
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -61,7 +68,9 @@ export default function ReceiptPage() {
 
     let student: Student
     try {
-      student = JSON.parse(studentRaw) as Student
+      const parsed = JSON.parse(studentRaw)
+      if (!isStudent(parsed)) { router.replace('/'); return }
+      student = parsed
     } catch {
       router.replace('/')
       return
@@ -89,12 +98,7 @@ export default function ReceiptPage() {
     }).catch(() => setFetchError(true))
 
     // 날짜 표시 타이머
-    const updateDate = () => {
-      const days = ['일','월','화','수','목','금','토']
-      const n = new Date()
-      const y = n.getFullYear(), m = String(n.getMonth()+1).padStart(2,'0'), d = String(n.getDate()).padStart(2,'0')
-      setDateStr(`${y}-${m}-${d} (${days[n.getDay()]})`)
-    }
+    const updateDate = () => setDateStr(formatKoreanDate())
     updateDate()
     timerRef.current = setInterval(updateDate, 60000)
 
@@ -268,12 +272,7 @@ export default function ReceiptPage() {
       </div>
       <div className="px-4 pb-6">
         <button
-          onClick={() => {
-            if (window.confirm('처음 화면으로 돌아가시겠습니까?')) {
-              sessionStorage.clear()
-              router.push('/')
-            }
-          }}
+          onClick={() => setModal('back-confirm')}
           className="w-full py-3 text-sm text-gray-500 border border-gray-200"
         >
           처음으로
@@ -281,7 +280,39 @@ export default function ReceiptPage() {
       </div>
 
       {/* 팝업 모달 */}
-      {modal && (
+      {modal === 'back-confirm' && (
+        <div
+          className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center px-5"
+          onClick={() => setModal(null)}
+        >
+          <div
+            className="bg-white w-full max-w-sm flex flex-col overflow-hidden"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="px-5 py-5">
+              <p className="text-base font-bold text-gray-800 mb-1">처음 화면으로 돌아가시겠습니까?</p>
+              <p className="text-sm text-gray-500">현재 화면 정보가 초기화됩니다.</p>
+            </div>
+            <div className="flex border-t border-gray-100">
+              <button
+                onClick={() => setModal(null)}
+                className="flex-1 py-3 text-sm text-gray-500 border-r border-gray-100"
+              >
+                취소
+              </button>
+              <button
+                onClick={() => { sessionStorage.clear(); router.push('/') }}
+                className="flex-1 py-3 text-sm font-medium text-white"
+                style={{ background: 'var(--theme)' }}
+              >
+                확인
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {(modal === 'notice' || modal === 'refund') && (
         <div
           className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center px-5"
           onClick={() => setModal(null)}

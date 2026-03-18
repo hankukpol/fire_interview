@@ -29,6 +29,6 @@ export async function GET(req: NextRequest) {
   }
 
   const { data, count, error } = await q
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return NextResponse.json({ error: '서버 오류가 발생했습니다.' }, { status: 500 })
   return NextResponse.json({ students: data ?? [], total: count ?? 0 })
 }

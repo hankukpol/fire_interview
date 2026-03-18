@@ -28,7 +28,7 @@ export async function DELETE(req: NextRequest) {
   if (!log) return NextResponse.json({ error: '배부 기록이 없습니다.' }, { status: 404 })
 
   const { error } = await db.from('distribution_logs').delete().eq('id', log.id)
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return NextResponse.json({ error: '서버 오류가 발생했습니다.' }, { status: 500 })
 
   return NextResponse.json({ ok: true })
 }

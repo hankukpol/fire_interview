@@ -27,7 +27,7 @@ export interface DistributionLog {
   distributed_at: string
   distributed_by: string
   note: string
-  students?: Pick<Student, 'name' | 'phone' | 'exam_number' | 'series'>
+  students?: Pick<Student, 'name' | 'phone' | 'exam_number' | 'series' | 'region'>
   materials?: Pick<Material, 'name'>
 }
 

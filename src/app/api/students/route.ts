@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
   }
 
   const { data, count, error } = await q.range(offset, offset + limit - 1)
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return NextResponse.json({ error: '서버 오류가 발생했습니다.' }, { status: 500 })
   return NextResponse.json({ students: data, total: count })
 }
 
@@ -58,7 +58,7 @@ export async function POST(req: NextRequest) {
     if (error.code === '23505') {
       return NextResponse.json({ error: '이미 등록된 학생입니다 (이름+연락처 중복).' }, { status: 409 })
     }
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ error: '서버 오류가 발생했습니다.' }, { status: 500 })
   }
 
   await invalidateCache('students')

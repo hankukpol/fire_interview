@@ -24,7 +24,7 @@ export async function GET(
     .select('*, distribution_logs(id, material_id, distributed_at, materials(name))')
     .eq('id', id)
     .single()
-  if (error) return NextResponse.json({ error: error.message }, { status: 404 })
+  if (error) return NextResponse.json({ error: '학생을 찾을 수 없습니다.' }, { status: 404 })
   return NextResponse.json({ student: data })
 }
 
@@ -54,7 +54,7 @@ export async function PATCH(
     .eq('id', id)
     .select()
     .single()
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return NextResponse.json({ error: '서버 오류가 발생했습니다.' }, { status: 500 })
   await invalidateCache('students')
   return NextResponse.json({ student: data })
 }
@@ -66,7 +66,7 @@ export async function DELETE(
   const { id } = await params
   const db = createServerClient()
   const { error } = await db.from('students').delete().eq('id', id)
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return NextResponse.json({ error: '서버 오류가 발생했습니다.' }, { status: 500 })
   await invalidateCache('students')
   return NextResponse.json({ success: true })
 }
