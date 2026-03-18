@@ -63,18 +63,6 @@ export default function ScanPage() {
     if (qrEl) qrEl.innerHTML = ''
   }
 
-  async function requestCameraPermission() {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: false,
-      video: {
-        facingMode: { ideal: 'environment' },
-        width: { ideal: 1280 },
-        height: { ideal: 720 },
-      },
-    })
-    stream.getTracks().forEach(track => track.stop())
-  }
-
   function getPreferredCamera(cameras: CameraOption[]) {
     return cameras.find(camera => /back|rear|environment/i.test(camera.label))
       ?? cameras[cameras.length - 1]
@@ -122,6 +110,18 @@ export default function ScanPage() {
     return '카메라를 시작할 수 없습니다. 페이지를 새로고침한 뒤 다시 시도해 주세요.'
   }
 
+  function isPermissionDeniedError(error: unknown) {
+    const message = typeof error === 'string'
+      ? error
+      : error instanceof Error
+        ? error.message
+        : ''
+
+    return (error instanceof DOMException && error.name === 'NotAllowedError')
+      || message.includes('Permission denied')
+      || message.includes('NotAllowedError')
+  }
+
   async function startScanner() {
     if (typeof window === 'undefined') return
     if (scannerRef.current) return
@@ -141,7 +141,6 @@ export default function ScanPage() {
     isProcessingRef.current = false
     try {
       const { Html5Qrcode, Html5QrcodeSupportedFormats } = await import('html5-qrcode')
-      await requestCameraPermission()
       const containerWidth = containerRef.current?.offsetWidth ?? 300
       const boxSize = Math.max(150, Math.min(250, containerWidth - 40))
       const config = { fps: 10, qrbox: { width: boxSize, height: boxSize }, aspectRatio: 1 }
@@ -150,16 +149,10 @@ export default function ScanPage() {
         verbose: false,
         formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
       })
-      const cameras = await Html5Qrcode.getCameras()
-      const preferredCamera = cameras.length > 0 ? getPreferredCamera(cameras) : null
       const targets: Array<string | { facingMode: 'environment' | { exact: 'environment' } }> = []
 
-      if (preferredCamera?.id) targets.push(preferredCamera.id)
       targets.push({ facingMode: { exact: 'environment' } })
       targets.push({ facingMode: 'environment' })
-      if (cameras[0]?.id && cameras[0].id !== preferredCamera?.id) {
-        targets.push(cameras[0].id)
-      }
 
       let lastError: unknown = null
       for (const target of targets) {
@@ -177,13 +170,30 @@ export default function ScanPage() {
         }
       }
 
-      if (!targets.length) {
-        clearScannerContainer()
-        const scanner = createScanner()
-        await scanner.start({ facingMode: 'environment' }, config, cb, undefined)
-        scannerRef.current = scanner
-        optimizeScannerVideo()
-        return
+      if (!isPermissionDeniedError(lastError)) {
+        const cameras = await Html5Qrcode.getCameras()
+        const preferredCamera = cameras.length > 0 ? getPreferredCamera(cameras) : null
+        const fallbackTargets: string[] = []
+
+        if (preferredCamera?.id) fallbackTargets.push(preferredCamera.id)
+        if (cameras[0]?.id && cameras[0].id !== preferredCamera?.id) {
+          fallbackTargets.push(cameras[0].id)
+        }
+
+        for (const target of fallbackTargets) {
+          clearScannerContainer()
+          const scanner = createScanner()
+          try {
+            await scanner.start(target, config, cb, undefined)
+            scannerRef.current = scanner
+            optimizeScannerVideo()
+            return
+          } catch (error) {
+            lastError = error
+            try { await scanner.stop() } catch { /* ignore */ }
+            try { scanner.clear() } catch { /* ignore */ }
+          }
+        }
       }
 
       throw lastError ?? new Error('camera-start-failed')
