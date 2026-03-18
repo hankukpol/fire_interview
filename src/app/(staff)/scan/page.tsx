@@ -62,7 +62,6 @@ export default function ScanPage() {
     try {
       const { Html5Qrcode } = await import('html5-qrcode')
       const scanner = new Html5Qrcode('qr-reader')
-      scannerRef.current = scanner
       const containerWidth = containerRef.current?.offsetWidth ?? 300
       const boxSize = Math.min(250, containerWidth - 40)
       await scanner.start(
@@ -71,7 +70,9 @@ export default function ScanPage() {
         async (decodedText: string) => { await handleScan(decodedText) },
         undefined,
       )
+      scannerRef.current = scanner // start 성공 후에만 세팅
     } catch {
+      scannerRef.current = null // 실패 시 반드시 초기화
       setState('idle')
       showOverlay({ success: false, title: '카메라 권한이 필요합니다. 브라우저 설정에서 허용해 주세요.' }, 5000)
     }
@@ -104,51 +105,62 @@ export default function ScanPage() {
     try { const url = new URL(decodedText); token = url.searchParams.get('token') ?? decodedText } catch { /* not URL */ }
     pendingTokenRef.current = token
 
-    const res = await fetch('/api/distribution/scan', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token }),
-    })
-    const data: ScanResult = await res.json()
-    if (data.studentName) setLastStudentName(data.studentName)
+    try {
+      const res = await fetch('/api/distribution/scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token }),
+      })
+      const data: ScanResult = await res.json()
+      if (data.studentName) setLastStudentName(data.studentName)
 
-    if (data.needsSelection) {
-      setSelectResult(data)
-      setState('selecting')
-      return // isProcessingRef stays true until selection is made
-    }
+      if (data.needsSelection) {
+        setSelectResult(data)
+        setState('selecting')
+        return // isProcessingRef stays true until selection is made
+      }
 
-    setState('scanning') // 카메라 계속 켜진 상태로 복귀
+      setState('scanning') // 카메라 계속 켜진 상태로 복귀
 
-    if (data.success) {
-      showOverlay({ success: true, title: `✓  ${data.materialName} 배부 완료`, studentName: data.studentName })
-    } else {
-      let title = '처리 실패'
-      if (data.reason === 'ALREADY_RECEIVED') title = '이미 수령한 자료입니다'
-      else if (data.reason === 'ALL_RECEIVED') title = '모든 자료를 수령했습니다'
-      else if (data.reason === 'INVALID_TOKEN') title = '유효하지 않은 QR 코드'
-      else if (data.reason) title = data.reason
-      showOverlay({ success: false, title, studentName: data.studentName }, 3000)
+      if (data.success) {
+        showOverlay({ success: true, title: `✓  ${data.materialName} 배부 완료`, studentName: data.studentName })
+      } else {
+        let title = '처리 실패'
+        if (data.reason === 'ALREADY_RECEIVED') title = '이미 수령한 자료입니다'
+        else if (data.reason === 'ALL_RECEIVED') title = '모든 자료를 수령했습니다'
+        else if (data.reason === 'INVALID_TOKEN') title = '유효하지 않은 QR 코드'
+        else if (data.reason) title = data.reason
+        showOverlay({ success: false, title, studentName: data.studentName }, 3000)
+      }
+    } catch {
+      setState('scanning')
+      showOverlay({ success: false, title: '네트워크 오류가 발생했습니다' }, 3000)
     }
   }
 
   async function handleSelectMaterial(materialId: number) {
     setState('processing')
     const token = pendingTokenRef.current
-    const res = await fetch('/api/distribution/scan', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token, material_id: materialId }),
-    })
-    const data: ScanResult = await res.json()
-    if (data.studentName) setLastStudentName(data.studentName)
-    setSelectResult(null)
-    setState('scanning')
+    try {
+      const res = await fetch('/api/distribution/scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, material_id: materialId }),
+      })
+      const data: ScanResult = await res.json()
+      if (data.studentName) setLastStudentName(data.studentName)
+      setSelectResult(null)
+      setState('scanning')
 
-    if (data.success) {
-      showOverlay({ success: true, title: `✓  ${data.materialName} 배부 완료`, studentName: data.studentName })
-    } else {
-      showOverlay({ success: false, title: '처리 실패' })
+      if (data.success) {
+        showOverlay({ success: true, title: `✓  ${data.materialName} 배부 완료`, studentName: data.studentName })
+      } else {
+        showOverlay({ success: false, title: '처리 실패' })
+      }
+    } catch {
+      setSelectResult(null)
+      setState('scanning')
+      showOverlay({ success: false, title: '네트워크 오류가 발생했습니다' }, 3000)
     }
   }
 
@@ -180,9 +192,9 @@ export default function ScanPage() {
         {(['qr', 'quick'] as TabMode[]).map(t => (
           <button
             key={t}
-            onClick={() => {
+            onClick={async () => {
               setTab(t)
-              if (t === 'quick') { stopScanner(); setState('idle'); setSelectResult(null); setOverlay(null) }
+              if (t === 'quick') { await stopScanner(); setState('idle'); setSelectResult(null); setOverlay(null) }
               if (t === 'qr') { startScanner() }
             }}
             className="flex-1 py-2.5 text-sm font-medium transition-colors"

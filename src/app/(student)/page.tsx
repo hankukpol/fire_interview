@@ -98,7 +98,7 @@ export default function StudentLoginPage() {
         </h1>
       </div>
 
-      <div className="flex-1 flex flex-col gap-4 p-6">
+      <div className="flex-1 flex flex-col justify-center gap-4 p-6">
         {/* 저장된 정보 빠른 로그인 */}
         {savedName && !showForm && (
           <div className="flex flex-col gap-3">
